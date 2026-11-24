@@ -1,8 +1,8 @@
 export const billiardRate = 6000;
 export const billiardTables = 6;
 
-export function elapsedSeconds(startedAt: number, endedAt: number) {
-  return Math.max(0, Math.floor((endedAt - startedAt) / 1000));
+export function elapsedSeconds(startedAt: number, endedAt: number, pausedMs = 0) {
+  return Math.max(0, Math.floor((endedAt - startedAt - pausedMs) / 1000));
 }
 
 export function timeCharge(seconds: number, rate = billiardRate) {

@@ -6,9 +6,11 @@ Proyecto de portafolio para administrar un establecimiento con seis mesas de bil
 
 La aplicación local permite administrar el inventario, registrar ventas de productos y manejar cuentas por nombre. El cajero puede cobrar de inmediato, dejar un saldo fiado o registrar un abono con efectivo, transferencia y fichas.
 
-En **Billar**, abre la mesa, registra los productos entregados y pulsa **Terminar y cobrar**. Cobra a una persona o abre **Repartir entre personas** para dividir el tiempo y los consumos. Si se abrió por error y no tiene productos entregados, usa **Cancelar inicio** para liberar la mesa sin cargo.
+En **Billar**, abre la mesa, registra los productos entregados y pulsa **Terminar y cobrar**. La mesa muestra las horas de inicio y fin. Si detuviste el tiempo por error, usa **Reanudar tiempo**. La pausa queda fuera del cobro. Cobra a una persona o abre **Repartir entre personas** para dividir el tiempo y los consumos. Si se abrió por error y no tiene productos entregados, usa **Cancelar inicio** para liberar la mesa sin cargo.
 
 En **Tejo → Canchas y chicos**, elige la cancha e ingresa cuántos jugadores hay. Puedes agregar más jugadores para los próximos chicos. Registra los chicos aunque todavía no sepas quién perdió. Después, en **Asignar chicos perdidos**, escribe cuántos perdió cada persona y el nombre para cargar el importe a su cuenta. Cada jugador puede usar su derecho en una ficha o en productos incluso antes de que se asigne el resultado.
+
+En **Tejo → Canjear fichas**, escribe cuántas fichas te entregaron y pulsa los productos que vas a entregar. El resumen muestra lo que cubren las fichas y lo que falta cobrar. Los medios de pago aparecen cuando hay excedente. El encabezado de la app mantiene visible la fecha y la hora de Colombia.
 
 En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, ingresa el conteo de ambos fondos, las transferencias verificadas, las fichas físicas y la base que dejas. El sistema guarda los conteos, las diferencias y cuánto entregas al administrador.
 

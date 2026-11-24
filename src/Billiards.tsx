@@ -8,11 +8,24 @@ import { api, emptyPayment, label, message, money, PaymentFields, totalPayment, 
 type Line = { id: number; label: string; quantity: number; unitPrice: number };
 type Session = {
   id: number; tableNumber: number; rate: number; startedAt: number;
-  stoppedAt: number | null; closedAt: number | null; canceledAt: number | null; seconds: number; time: number; total: number; items: Line[];
+  stoppedAt: number | null; closedAt: number | null; canceledAt: number | null; pausedMs: number;
+  seconds: number; time: number; total: number; items: Line[];
 };
 type Closed = Session & { shares: { saleId: number; name: string | null; total: number }[] };
 type Dashboard = { rate: number; active: Session[]; recent: Closed[] };
 type Part = { key: number; account: string; amounts: number[]; payment: PaymentInput };
+
+const sessionDate = new Intl.DateTimeFormat('es-CO', {
+  day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'America/Bogota',
+});
+
+function SessionHours({ session }: { session: Session }) {
+  return <dl className="session-hours">
+    <div><dt>Hora de inicio</dt><dd><time dateTime={new Date(session.startedAt).toISOString()}>{sessionDate.format(session.startedAt)}</time></dd></div>
+    <div><dt>Hora de fin</dt><dd>{session.stoppedAt === null ? 'En juego' :
+      <time dateTime={new Date(session.stoppedAt).toISOString()}>{sessionDate.format(session.stoppedAt)}</time>}</dd></div>
+  </dl>;
+}
 
 function BillSplit({ session, accounts, locked, onClose }: {
   session: Session;
@@ -253,7 +266,7 @@ export function Billiards() {
 
   const session = dashboard?.active.find((entry) => entry.tableNumber === table);
   const locked = busy || Boolean(loadError);
-  const seconds = session ? elapsedSeconds(session.startedAt, session.stoppedAt ?? now) : 0;
+  const seconds = session ? elapsedSeconds(session.startedAt, session.stoppedAt ?? now, session.pausedMs) : 0;
   const liveTime = session ? timeCharge(seconds, session.rate) : 0;
   const consumption = session?.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) ?? 0;
 
@@ -287,6 +300,7 @@ export function Billiards() {
           {status && <p role="status">{status}</p>}
           {!session ? <button disabled={locked} onClick={() => void operate('billiards', { table }, 'Mesa abierta.')}>Abrir mesa e iniciar tiempo</button>
             : <>
+              <SessionHours session={session} />
               <div className="totals">
                 <span>Tiempo <strong>{money.format(liveTime)}</strong></span>
                 <span>Consumos <strong>{money.format(consumption)}</strong></span>
@@ -301,9 +315,12 @@ export function Billiards() {
                 }, 'Consumo entregado y registrado.')} />}
               {session.stoppedAt === null && <button type="button" disabled={locked}
                 onClick={() => { setCanceling(false); void operate('billiards/' + session.id + '/stop', {}, 'Tiempo detenido.'); }}>Terminar y cobrar</button>}
-              {session.stoppedAt !== null && <TablePayment key={session.id}
-                session={session} accounts={accounts} locked={locked}
-                onClose={(participants) => operate('billiards/' + session.id + '/close', { participants }, 'Cuenta liquidada. La mesa está libre.')} />}
+              {session.stoppedAt !== null && <>
+                <button type="button" className="secondary" disabled={locked}
+                  onClick={() => { setCanceling(false); void operate('billiards/' + session.id + '/resume', {}, 'Tiempo reanudado. La pausa no se cobra.'); }}>Reanudar tiempo</button>
+                <TablePayment key={session.id} session={session} accounts={accounts} locked={locked}
+                  onClose={(participants) => operate('billiards/' + session.id + '/close', { participants }, 'Cuenta liquidada. La mesa está libre.')} />
+              </>}
               {session.stoppedAt !== null && <details className="bill-counter">
                 <summary>Agregar un consumo olvidado</summary>
                 <AddConsumption products={products} locked={locked}
@@ -323,6 +340,7 @@ export function Billiards() {
         {!dashboard.recent.length ? <p>Todavía no se ha liquidado una mesa.</p> : <ul className="ledger-list">{dashboard.recent.map((entry) => (
           <li key={entry.id}>
             <div className="row-between"><strong>Mesa {entry.tableNumber} · {entry.canceledAt === null ? durationLabel(entry.seconds) : 'Inicio cancelado'}</strong><strong>{money.format(entry.total)}</strong></div>
+            <SessionHours session={entry} />
             {entry.shares.length > 0 && <ul className="sale-lines">{entry.shares.map((share) => (
               <li key={share.saleId}><span>{share.name ?? 'Pago sin nombre'} · Venta #{share.saleId}</span><strong>{money.format(share.total)}</strong></li>
             ))}</ul>}

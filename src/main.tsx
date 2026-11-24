@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Catalog } from './Catalog';
 import { Accounts, api } from './Accounts';
@@ -89,9 +89,24 @@ const modules = [
   ['catalog', 'Inventario'], ['cash', 'Caja'], ['note', 'Nota de caja'],
 ] as const;
 
+const localDate = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
+const localClock = new Intl.DateTimeFormat('es-CO', { timeStyle: 'medium', timeZone: 'America/Bogota' });
+
+function AppClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+  return <time className="app-clock" aria-label="Fecha y hora, Colombia" dateTime={now.toISOString()}>
+    <span>{localDate.format(now)}</span><strong>{localClock.format(now)}</strong>
+  </time>;
+}
+
 function App() {
   const [section, setSection] = useState<typeof modules[number][0] | null>(null);
   const [cashOpen, setCashOpen] = useState<boolean | null>(null);
+  const header = useRef<HTMLElement>(null);
   useCajaKeyboard();
   useEffect(() => {
     void api<{ active: unknown }>('cash').then((cash) => {
@@ -99,16 +114,29 @@ function App() {
       setSection((previous) => previous ?? (cash.active ? 'sale' : 'cash'));
     }).catch(() => setSection((previous) => previous ?? 'cash'));
   }, []);
+  useEffect(() => {
+    const element = header.current;
+    const app = element?.parentElement;
+    if (!element || !app) return;
+    const measure = () => app.style.setProperty('--header-size', element.offsetHeight + 'px');
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div id="caja-app">
-      <header className="app-header">
+      <header className="app-header" ref={header}>
         <div className="app-header-inner">
           <div className="app-brand"><span className="app-mark" aria-hidden="true">TB</span>
             <div><h1>Tejo &amp; Billar</h1><p>Punto de venta</p></div></div>
-          <span className="app-shift" data-open={cashOpen === true}>
-            {cashOpen === null ? 'Caja local' : cashOpen ? 'Caja abierta' : 'Caja cerrada'}
-          </span>
+          <div className="app-session">
+            <AppClock />
+            <span className="app-shift" data-open={cashOpen === true}>
+              {cashOpen === null ? 'Caja local' : cashOpen ? 'Caja abierta' : 'Caja cerrada'}
+            </span>
+          </div>
         </div>
         <nav className="actions app-nav" data-main-nav aria-label="Secciones de caja">
           {modules.map(([id, name]) => <button key={id} type="button" className="navigation"

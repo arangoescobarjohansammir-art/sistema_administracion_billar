@@ -7,6 +7,41 @@ import { testServer } from './support/local-server.mjs';
 
 const noPayment = { cash: 0, transfer: 0, tokens: 0 };
 
+test('reanuda la mesa sin cobrar la pausa y conserva sus horas', { timeout: 20000 }, async (t) => {
+  const { start, stop, json, cleanup, databasePath } = await testServer();
+  t.after(cleanup);
+  await start();
+  const post = (path, status, fields = {}) => json(path, status, 'POST', { requestId: randomUUID(), ...fields });
+  const { id } = await post('/api/billiards', 201, { table: 2 });
+  const path = '/api/billiards/' + id;
+  await post(path + '/resume', 409);
+  await post(path + '/stop', 201);
+  await stop();
+  const fixture = new DatabaseSync(databasePath);
+  const began = Date.now() - 650_000;
+  try {
+    fixture.prepare('UPDATE billiard_sessions SET started_at = ?, stopped_at = ? WHERE id = ?').run(began, began + 600_000, id);
+  } finally { fixture.close(); }
+  await start();
+  assert.equal((await json('/api/billiards', 200)).active[0].seconds, 600);
+  const requestId = randomUUID();
+  await post(path + '/resume', 201, { requestId });
+  await post(path + '/resume', 200, { requestId });
+  const resumed = (await json('/api/billiards', 200)).active[0];
+  assert.equal(resumed.startedAt, began);
+  assert.equal(resumed.stoppedAt, null);
+  assert.ok(resumed.pausedMs >= 50_000);
+  assert.ok(resumed.seconds >= 600 && resumed.seconds < 625);
+  await post(path + '/stop', 201);
+  await stop();
+  await start();
+  const ended = (await json('/api/billiards', 200)).active[0];
+  assert.equal(ended.startedAt, began);
+  assert.ok(ended.stoppedAt > began + 600_000);
+  assert.equal(ended.pausedMs, resumed.pausedMs);
+  assert.equal(ended.time, timeCharge(ended.seconds));
+});
+
 test('conserva la mesa, reparte tiempo y consumos, y descuenta inventario solo al entregar', { timeout: 20000 }, async (t) => {
   assert.equal(timeCharge(4800), 8000);
   assert.equal(timeCharge(2700), 4500);
