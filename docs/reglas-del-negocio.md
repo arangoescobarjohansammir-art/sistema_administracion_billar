@@ -22,6 +22,7 @@
 - El tejo se cobra por chico. Quien pierde paga $4.000 por participante. Cada participante, incluido quien pierde, tiene derecho a una ficha o a consumir hasta $4.000 en productos por cada chico.
 - El jugador puede combinar productos en un mismo canje. Si los productos cuestan más de $4.000, el jugador cubre el excedente. Si cuestan menos y se cierra el canje, la diferencia se pierde.
 - Una ficha ya entregada puede canjearse por hasta $4.000 en productos o aplicarse como $3.000 al pago de una cuenta. El canje por productos no da cambio ni deja saldo en la ficha.
+- El canje de fichas físicas por productos se registra al cobrar en **Venta**. Los consumos cubiertos directamente por un chico se registran en **Tejo**.
 - Se registran por separado el cargo al perdedor, la elección de cada jugador, las fichas entregadas y las fichas recibidas por canje o pago. Un mismo derecho de un chico se usa una sola vez.
 - Un derecho puede quedar pendiente hasta registrar la entrega de la ficha o los productos. Para liberar la cancha hay que registrar cómo se usaron los derechos pendientes. El saldo de dinero puede seguir fiado en las cuentas por nombre.
 
@@ -59,6 +60,7 @@
 | Dos personas juegan tres chicos de tejo y la misma persona pierde los tres. Nadie consume. | El perdedor debe $24.000. Se entregan tres fichas a cada persona. Si el perdedor entrega sus tres fichas al pagar, se abonan $9.000 y quedan $15.000 por cobrar. |
 | Una persona usa el derecho de un chico en un producto de $6.000. Otra lo usa en productos de $3.000 y termina el canje. | La primera debe $2.000 adicionales. La segunda no recibe cambio ni conserva $1.000 de saldo. Se registran las salidas de los productos entregados. |
 | Una cuenta de $20.000 se paga con una ficha, $7.000 en efectivo y $10.000 por transferencia. | La cuenta queda en cero. El cierre registra $7.000 en efectivo, $10.000 en transferencias y una ficha recibida por $3.000. |
+| En Venta se entrega una botella de $60.000 y se reciben diez fichas en canje por productos. | Las fichas cubren $40.000. Se cobran $20.000, se registra la salida de una botella y el cuadre recibe diez fichas por canje. |
 | Un cliente consume $16.000, abona $6.000 en efectivo y paga $10.000 al día siguiente. | El primer día quedan $10.000 pendientes y entran $6.000. El segundo día entran $10.000 y se salda la deuda sin descontar inventario de nuevo. |
 | Se registran dos canastas de 30 cervezas. Se entregan una cerveza fiada y otra por canje. | Entran 60 unidades y salen dos, con el motivo de cada salida. Si no había existencias previas ni otros movimientos, quedan 58 unidades. |
 | Se abre con $100.000 de base, se cobran $250.000 en efectivo y se gastan $70.000 en una compra imprevista. | Se esperan $280.000 en el cajón antes de cerrar. Si coincide el conteo y se dejan $100.000 de base, se entregan $180.000 al administrador. El cierre conserva el cobro y el retiro con su motivo. |

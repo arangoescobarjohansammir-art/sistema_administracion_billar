@@ -14,10 +14,7 @@ type Benefit = { accountId: number; customerId?: number | null; name: string; is
 type Round = { id: number; number: number; loser: string | null; loserId: number | null; total: number; benefits: Benefit[]; flexible?: boolean };
 type Group = { id: number; courtType: TejoType; courtNumber: number; flexible?: boolean; players: Player[]; rounds: Round[] };
 type RedeemEntry = { groupId: number; roundId: number; player: Benefit; flexible?: boolean };
-type Overview = {
-  active: Group[]; recent: Group[]; physicalRedemptions: Redemption[];
-  tokenCounts: { issued: number; redeemed: number; receivedAsPayment: number };
-};
+type Overview = { active: Group[]; recent: Group[] };
 type Action = (path: string, payload: object, success: string) => Promise<boolean>;
 type Basket = { product: Product; quantity: number }[];
 const searchText = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
@@ -128,10 +125,9 @@ const redemptionMethods = [
 type RedemptionMethod = typeof redemptionMethods[number][0] | '';
 
 function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
-  entry?: RedeemEntry;
+  entry: RedeemEntry;
   accounts: Account[]; products: Product[]; locked: boolean; act: Action; onCancel?: () => void;
 }) {
-  const [tokens, setTokens] = useState('1');
   const [payee, setPayee] = useState('');
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(false);
@@ -140,19 +136,18 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
   const [payment, setPayment] = useState(emptyPayment);
   const [received, setReceived] = useState('');
   const results = useRef<HTMLDivElement>(null);
-  const validTokens = Boolean(entry) || (Number.isInteger(Number(tokens)) && Number(tokens) >= 1 && Number(tokens) <= 1000);
-  const allowance = (entry ? 1 : Number(tokens)) * tejoProductValue;
+  const allowance = tejoProductValue;
   const subtotal = basket.reduce((sum, { product, quantity }) => sum + product.price * quantity, 0);
   const extra = Math.max(0, subtotal - allowance);
   const unused = Math.max(0, allowance - subtotal);
   const methods = extra === 0 ? emptyPayment : method === 'cash' ? { ...emptyPayment, cash: extra }
     : method === 'transfer' ? { ...emptyPayment, transfer: extra } : method === 'mixed' ? payment : emptyPayment;
   const remaining = extra - totalPayment(methods);
-  const knownPlayer = Boolean(entry && (!entry.flexible || entry.player.customerId));
+  const knownPlayer = !entry.flexible || Boolean(entry.player.customerId);
   const change = cashChange(methods.cash, received);
   const needsAccount = remaining > 0 && (method === 'credit' || method === 'mixed');
   const quantitiesValid = basket.every(({ product, quantity }) => Number.isInteger(quantity) && quantity > 0 && quantity <= product.stock);
-  const ready = !locked && validTokens && basket.length > 0 && quantitiesValid &&
+  const ready = !locked && basket.length > 0 && quantitiesValid &&
     (extra === 0 || (Boolean(method) && remaining >= 0 && (remaining === 0 || Boolean(payee) || knownPlayer) &&
       (methods.cash <= 0 || change === null || (Number.isInteger(change) && change >= 0))));
   const matches = products.filter((product) => searchText(label(product)).includes(searchText(query.trim())));
@@ -169,43 +164,19 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
     if (!ready) return;
     const items = basket.map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price }));
     const accountId = needsAccount && payee ? Number(payee) : null;
-    if (entry) {
-      if (await act('tejo/' + entry.groupId + (entry.flexible ? '/flex-benefits' : '/benefits'), {
-        roundId: entry.roundId, playerId: entry.player.accountId, choice: 'products', items, payment: methods, accountId,
-      }, 'Consumo del chico registrado.')) onCancel?.();
-    } else {
-      const tokenText = tokens + (tokens === '1' ? ' ficha recibida.' : ' fichas recibidas.');
-      if (await act('tejo/redemptions', { tokens: Number(tokens), accountId, items, payment: methods }, 'Canje registrado. ' +
-        tokenText + (methods.cash && change !== null ? ' Devuelto: ' + money.format(change) + '.' : ''))) {
-        setTokens('1');
-        setPayee('');
-        setQuery('');
-        setExpanded(false);
-        setBasket([]);
-        setMethod('');
-        setPayment(emptyPayment);
-        setReceived('');
-      }
-    }
+    if (await act('tejo/' + entry.groupId + (entry.flexible ? '/flex-benefits' : '/benefits'), {
+      roundId: entry.roundId, playerId: entry.player.accountId, choice: 'products', items, payment: methods, accountId,
+    }, 'Consumo del chico registrado.')) onCancel?.();
   }
 
   return (
-    <form className="redemption-form" onSubmit={save} aria-label="Registrar canje">
-      <div className="section-title"><h3>{entry ? 'Consumo de ' + entry.player.name : 'Canje por productos'}</h3></div>
+    <form className="redemption-form" onSubmit={save} aria-label="Registrar consumo del chico">
+      <div className="section-title"><h3>Consumo de {entry.player.name}</h3></div>
       <fieldset disabled={locked} className="plain-fieldset">
-        {!entry && <section className="redemption-step" aria-labelledby="redeem-tokens">
-          <h4 id="redeem-tokens">1. Fichas que entrega el cliente</h4>
-          <div className="redemption-token-row">
-            <label>Cantidad de fichas<input type="number" min={1} max={1000} step={1} inputMode="numeric" required value={tokens}
-              onFocus={(event) => event.currentTarget.select()} onChange={(event) => setTokens(event.target.value)} /></label>
-            <p>Disponible para productos<strong>{validTokens ? money.format(allowance) : '—'}</strong></p>
-          </div>
-          <p className="secondary-text">Cada ficha cubre hasta {money.format(tejoProductValue)} en productos. Para abonar {money.format(3000)} por ficha, ve a <strong>Cuentas</strong>.</p>
-        </section>}
-        {entry && <p className="secondary-text">Este chico cubre hasta <strong>{money.format(allowance)}</strong> en productos para {entry.player.name}.</p>}
+        <p className="secondary-text">Este chico cubre hasta <strong>{money.format(allowance)}</strong> en productos para {entry.player.name}.</p>
         <section className="redemption-step" aria-labelledby="redeem-products">
-          <h4 id="redeem-products">{entry ? 'Productos que lleva' : '2. Productos que lleva'}</h4>
-          <label>Buscar producto<input type="search" data-key-search autoFocus={Boolean(entry)} value={query}
+          <h4 id="redeem-products">Productos que lleva</h4>
+          <label>Buscar producto<input type="search" data-key-search autoFocus value={query}
             placeholder="Busca por nombre, marca o presentación" onChange={(event) => { setQuery(event.target.value); setExpanded(false); }}
             onKeyDown={(event) => {
               if (event.key !== 'ArrowDown' && event.key !== 'Enter') return;
@@ -241,30 +212,30 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
           ))}</ul>}
         </section>
         <section className="redemption-step redemption-review" aria-labelledby="redeem-review">
-          <h4 id="redeem-review">{entry ? 'Revisar y confirmar' : '3. Revisar y confirmar'}</h4>
+          <h4 id="redeem-review">Revisar y confirmar</h4>
           <div className="totals">
             <span>Valor de los productos<strong>{money.format(subtotal)}</strong></span>
-            <span>{entry ? 'Cubre el chico' : 'Cubren las fichas'}<strong>{money.format(Math.min(allowance, subtotal))}</strong></span>
+            <span>Cubre el chico<strong>{money.format(Math.min(allowance, subtotal))}</strong></span>
             <span>Por cobrar<strong>{money.format(extra)}</strong></span>
           </div>
           {!basket.length && <p>Agrega los productos que se van a entregar.</p>}
-          {basket.length > 0 && validTokens && extra === 0 && unused === 0 && <p>El canje cubre todo. No hay dinero por cobrar.</p>}
-          {basket.length > 0 && validTokens && unused > 0 && <p className="redemption-note">Puedes agregar productos por {money.format(unused)}. Si confirmas así, ese valor no se devuelve ni queda como saldo.</p>}
-          {extra > 0 && validTokens && <div className="redemption-payment">
+          {basket.length > 0 && extra === 0 && unused === 0 && <p>El chico cubre todo. No hay dinero por cobrar.</p>}
+          {basket.length > 0 && unused > 0 && <p className="redemption-note">Puedes agregar productos por {money.format(unused)}. Si confirmas así, ese valor no se devuelve ni queda como saldo.</p>}
+          {extra > 0 && <div className="redemption-payment">
             <h4>¿Cómo paga lo que falta?</h4>
             <div className="actions">{redemptionMethods.map(([id, name]) => <button key={id} type="button" className="secondary"
               aria-pressed={method === id} onClick={() => { setMethod(id); setReceived(''); }}>{name}</button>)}</div>
             {method === 'mixed' && <PaymentFields value={payment} onChange={setPayment} />}
             {methods.cash > 0 && <CashChangeField due={methods.cash} received={received} onChange={setReceived} />}
             {remaining < 0 && <p role="alert">El pago supera lo que falta por cobrar.</p>}
-            {needsAccount && (knownPlayer ? <p>Queda fiado a {entry?.player.name}: <strong>{money.format(remaining)}</strong></p>
+            {needsAccount && (knownPlayer ? <p>Queda fiado a {entry.player.name}: <strong>{money.format(remaining)}</strong></p>
               : <label>Cuenta para anotar {money.format(remaining)}<select required value={payee} onChange={(event) => setPayee(event.target.value)}>
                 <option value="">Seleccionar cliente</option>
                 {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
               </select></label>)}
           </div>}
           <div className="actions">
-            <button disabled={!ready}>Confirmar canje y entrega</button>
+            <button disabled={!ready}>Confirmar consumo y entrega</button>
             {onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancelar</button>}
           </div>
         </section>
@@ -313,7 +284,6 @@ export function Tejo() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [mode, setMode] = useState<'courts' | 'tokens'>('courts');
   const [type, setType] = useState<TejoType>('maxi');
   const [court, setCourt] = useState(1);
   const [redemption, setRedemption] = useState<RedeemEntry | null>(null);
@@ -373,13 +343,9 @@ export function Tejo() {
   return (
     <section aria-labelledby="tejo-title">
       <div className="section-title"><h2 id="tejo-title">Tejo</h2><strong>{money.format(tejoProductValue)} por participante y chico</strong></div>
-      <nav className="actions accounts-nav" aria-label="Secciones de tejo">
-        <button className="navigation" aria-pressed={mode === 'courts'} disabled={busy} onClick={() => { setMode('courts'); clearSelection(); }}>Canchas y chicos</button>
-        <button className="navigation" aria-pressed={mode === 'tokens'} disabled={busy} onClick={() => { setMode('tokens'); clearSelection(); }}>Canjear fichas</button>
-      </nav>
       {loadError && <p role="alert">{loadError} <button className="secondary" onClick={() => void load()}>Actualizar datos</button></p>}
       {!loadError && !overview && <p role="status">Cargando canchas…</p>}
-      {overview && mode === 'courts' && <>
+      {overview && <>
         {tejoTypes.map((courtType) => (
           <section key={courtType} aria-label={courtType === 'maxi' ? 'Maxitejo' : 'Tejo largo'}>
             <h3>{courtType === 'maxi' ? 'Maxitejo' : 'Tejo largo'}</h3>
@@ -421,25 +387,6 @@ export function Tejo() {
           {overview.recent.map((entry) => <details key={entry.id}><summary>{courtLabel(entry.courtType, entry.courtNumber)} · Grupo #{entry.id} · {entry.rounds.length} {entry.rounds.length === 1 ? 'chico' : 'chicos'}</summary>
             <RoundHistory group={entry} /></details>)}
         </section>}
-      </>}
-      {overview && mode === 'tokens' && <>
-        {error && <p role="alert">{error}</p>}
-        {status && <p role="status">{status}</p>}
-        <RedeemForm accounts={accounts} products={products} locked={locked} act={act} />
-        <details className="recent-sales"><summary>Historial de canjes y totales de fichas</summary>
-        <div className="totals" aria-label="Totales históricos de fichas">
-          <span>Entregadas en tejo <strong>{overview.tokenCounts.issued}</strong></span>
-          <span>Recibidas por canje <strong>{overview.tokenCounts.redeemed}</strong></span>
-          <span>Recibidas como pago <strong>{overview.tokenCounts.receivedAsPayment}</strong></span>
-        </div>
-        {!overview.physicalRedemptions.length ? <p>Sin canjes registrados.</p> : <ul className="ledger-list">
-          {overview.physicalRedemptions.map((item) => <li key={item.id}>
-            <div className="row-between"><strong>Canje #{item.id} · {item.tokens} {item.tokens === 1 ? 'ficha' : 'fichas'}</strong>
-              <strong>{item.name ?? 'Sin nombre'}</strong></div>
-            <RedeemedProducts redemption={item} />
-            <p>Excedente: {money.format(item.extra)}</p>
-          </li>)}
-        </ul>}</details>
       </>}
     </section>
   );

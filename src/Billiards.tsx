@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { cashChange } from '../shared/tender';
+import { accountTokenValue, cashChange } from '../shared/tender';
 import { CashChangeField } from './CashTools';
 import { billiardTables, durationLabel, elapsedSeconds, timeCharge } from '../shared/billiard';
-import { api, emptyPayment, label, message, money, PaymentFields, totalPayment, useOperation,
+import { api, emptyPayment, label, message, money, PaymentFields, TokenQuantity, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
 
 type Line = { id: number; label: string; quantity: number; unitPrice: number };
@@ -162,15 +162,17 @@ function TablePayment({ session, accounts, locked, onClose }: {
   session: Session; accounts: Account[]; locked: boolean; onClose: (participants: object[]) => Promise<boolean>;
 }) {
   const [split, setSplit] = useState(false);
-  const [method, setMethod] = useState<'cash' | 'transfer' | 'mixed' | 'credit'>('cash');
+  const [method, setMethod] = useState<'cash' | 'transfer' | 'tokens' | 'mixed' | 'credit'>('cash');
   const [owner, setOwner] = useState('');
   const [payment, setPayment] = useState(emptyPayment);
   const [received, setReceived] = useState('');
   const charge = method === 'cash' ? { ...emptyPayment, cash: session.total }
-    : method === 'transfer' ? { ...emptyPayment, transfer: session.total } : method === 'mixed' ? payment : emptyPayment;
+    : method === 'transfer' ? { ...emptyPayment, transfer: session.total } : method === 'mixed' ? payment
+      : method === 'tokens' ? { ...emptyPayment, tokens: payment.tokens } : emptyPayment;
   const balance = session.total - totalPayment(charge);
   const change = cashChange(charge.cash, received);
   const ready = session.total === 0 || (balance >= 0 && (balance === 0 || owner !== '') &&
+    (method !== 'tokens' || (Number.isInteger(payment.tokens) && payment.tokens > 0)) &&
     (charge.cash === 0 || change === null || (Number.isInteger(change) && change >= 0)));
   if (split) return <><BillSplit session={session} accounts={accounts} locked={locked} onClose={onClose} />
     <button type="button" className="secondary" disabled={locked} onClick={() => setSplit(false)}>Volver al cobro sencillo</button></>;
@@ -188,10 +190,20 @@ function TablePayment({ session, accounts, locked, onClose }: {
     <fieldset className="plain-fieldset" disabled={locked}>
       {session.total > 0 && <>
         <div className="actions">
-          {([['cash', 'Efectivo'], ['transfer', 'Transferencia'], ['mixed', 'Mixto / fichas'], ['credit', 'Fiado']] as const)
+          {([['cash', 'Efectivo'], ['transfer', 'Transferencia'], ['tokens', 'Fichas'], ['mixed', 'Mixto'], ['credit', 'Fiado']] as const)
             .map(([id, name]) => <button type="button" className="secondary" key={id} aria-pressed={method === id}
-              onClick={() => setMethod(id)}>{name}</button>)}
+              onClick={() => { setMethod(id); setReceived(''); }}>{name}</button>)}
         </div>
+        {method === 'tokens' && <div className="space-above">
+          <TokenQuantity count={payment.tokens} rate={accountTokenValue} onChange={(tokens) => setPayment({ ...payment, tokens })} />
+          {payment.tokens > 0 && balance > 0 && <div className="row-between">
+            <strong>Queda por pagar {money.format(balance)}</strong>
+            <button className="secondary" type="button" onClick={() => {
+              setPayment({ ...emptyPayment, tokens: payment.tokens, cash: balance });
+              setMethod('mixed');
+            }}>Completar en efectivo</button>
+          </div>}
+        </div>}
         <label className="space-above">Cuenta del cliente{balance === 0 ? ' (opcional)' : ''}<select value={owner}
           required={balance > 0} onChange={(event) => setOwner(event.target.value)}>
           <option value="">Seleccionar cuenta</option>

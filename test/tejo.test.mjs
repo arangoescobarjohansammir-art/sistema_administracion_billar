@@ -89,6 +89,7 @@ test('separa las canchas y registra cada chico y canje una sola vez', { timeout:
   assert.equal(cash.tokenAmount, 9000);
   assert.equal(cash.expectedTokens, 100);
   assert.deepEqual(overview.physicalRedemptions.map(({ subtotal, extra }) => [subtotal, extra]), [[6000, 2000], [4000, 0], [3000, 0]]);
+  assert.deepEqual(await json('/api/tejo/redemptions', 200), overview.physicalRedemptions);
   const closedLargo = overview.recent.find(({ id }) => id === largo.id);
   assert.equal(closedLargo.rounds[0].benefits.find((item) => item.accountId === antonio.id).redemption.extra, 2000);
   assert.deepEqual((await json(catalog + '/' + premium.productId + '/movements', 200)).map((row) => row.units), [-1, -1, 5]);
@@ -109,6 +110,38 @@ test('separa las canchas y registra cada chico y canje una sola vez', { timeout:
   const nextShift = await openShift(100_000, 98);
   assert.equal((await json('/api/cash/' + nextShift.id, 200)).totals.expectedTokens, 98);
   await post('/api/tejo', 201, opening);
+});
+
+test('distingue diez fichas de canje por productos de las fichas de abono', { timeout: 20000 }, async (t) => {
+  const { start, json, cleanup, openShift } = await testServer();
+  t.after(cleanup);
+  await start();
+  await openShift();
+  const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
+  const customer = await json('/api/accounts', 201, 'POST', { name: 'Cuenta pendiente' });
+  const bottle = await json('/api/products', 201, 'POST', {
+    name: 'Aguardiente', brand: '', presentation: 'Botella', price: 60000,
+    packageName: '', unitsPerPackage: 1, active: true,
+  });
+  await json('/api/products/' + bottle.id + '/movements', 201, 'POST', {
+    direction: 'in', unit: 'unit', quantity: 2, reason: 'Prueba',
+  });
+  const items = [{ productId: bottle.id, quantity: 1, unitPrice: 60000 }];
+  const sale = { accountId: null, items, tokens: 10, payment: { ...noPayment, cash: 20000 }, requestId: randomUUID() };
+  await post('/api/tejo/redemptions', 201, sale);
+  await post('/api/tejo/redemptions', 200, sale);
+  const [redemption] = await json('/api/tejo/redemptions', 200);
+  assert.deepEqual([redemption.tokens, redemption.allowance, redemption.subtotal, redemption.extra], [10, 40000, 60000, 20000]);
+  await post('/api/sales', 201, { accountId: customer.id, items, payment: noPayment });
+  await post('/api/accounts/' + customer.id + '/payments', 201, { payment: { ...noPayment, tokens: 10 } });
+  const account = await json('/api/accounts/' + customer.id, 200);
+  assert.equal(account.account.balance, 30000);
+  assert.equal(account.payments[0].tokenValue, 3000);
+  assert.equal((await json('/api/products', 200))[0].stock, 0);
+  const { totals } = (await json('/api/cash', 200)).active;
+  assert.equal(totals.tokensRedeemed, 10);
+  assert.equal(totals.tokensReceived, 10);
+  assert.equal(totals.cashReceived, 20000);
 });
 
 test('acepta jugadores sin nombre y asigna los chicos por cantidad después de jugar', { timeout: 20000 }, async (t) => {

@@ -4,7 +4,7 @@ import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
 import { activeShiftId } from './cash-ledger.js';
 
-const tokenValue = 3000;
+import { accountTokenValue as tokenValue } from '../shared/tender.js';
 const maxMoney = 1_000_000_000;
 
 type Payment = { cash: number; transfer: number; tokens: number };

@@ -164,9 +164,6 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--ac
 .redemption-step { border-top: 1px solid var(--line); padding: 0.95rem 0; }
 .redemption-step:last-child { padding-bottom: 0; }
 .redemption-step h4 { margin-bottom: 0.55rem; }
-.redemption-token-row { display: grid; grid-template-columns: minmax(8rem, 12rem) auto; align-items: center; gap: 0.45rem 1rem; }
-.redemption-token-row p { margin: 0; color: var(--accent-ink); }
-.redemption-token-row strong { display: block; font-size: 1.33rem; }
 .redemption-products .sale-product { min-height: 4.5rem; }
 .redemption-review .totals { margin-block: 0.6rem; padding: 0.75rem; border: 0; border-radius: 0.5rem; background: var(--accent-soft); }
 .redemption-review .totals strong { font-variant-numeric: tabular-nums; }
@@ -246,6 +243,8 @@ kbd { display: inline-block; padding: 0.08rem 0.32rem; border: 1px solid var(--c
 .order-actions { display: grid; gap: 0.45rem; }
 .payment-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; margin-bottom: 0.7rem; }
 .payment-options button { min-width: 0; padding-inline: 0.25rem; font-size: 0.84rem; overflow-wrap: anywhere; }
+.payment-options-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sale-token-quantity { margin-bottom: 0.75rem; }
 .sale-confirmation, .sale-callout { border-radius: 0.55rem; padding: 0.65rem 0.85rem; margin: 0 0 0.85rem; }
 .sale-confirmation { background: var(--blue-soft); color: var(--blue-ink); font-weight: 700; }
 .sale-callout { background: var(--orange-soft); color: var(--rust); display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }

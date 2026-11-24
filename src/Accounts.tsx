@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { accountTokenValue as tokenValue } from '../shared/tender';
 
 export type Account = { id: number; name: string; balance: number };
 export type PaymentInput = { cash: number; transfer: number; tokens: number };
@@ -7,7 +8,6 @@ type Sale = { id: number; total: number; createdAt: string; items: { label: stri
 type Detail = { account: Account; sales: Sale[]; payments: Payment[] };
 export type Product = { id: number; name: string; brand: string; presentation: string; price: number; active: 0 | 1; stock: number; hasPhoto: 0 | 1 };
 
-const tokenValue = 3000;
 export const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
 export const emptyPayment = { cash: 0, transfer: 0, tokens: 0 };
@@ -47,15 +47,24 @@ export function useOperation() {
   };
 }
 
-export function PaymentFields({ value, onChange }: { value: PaymentInput; onChange: (value: PaymentInput) => void }) {
+export function TokenQuantity({ count, rate, onChange, max }: {
+  count: number; rate: number; onChange: (count: number) => void; max?: number;
+}) {
+  return <label>Fichas recibidas · {money.format(rate)} c/u<input type="number" min={0} max={max} step={1} inputMode="numeric"
+    value={count || ''} onFocus={(event) => event.currentTarget.select()}
+    onChange={(event) => onChange(Number(event.target.value))} placeholder="0" /></label>;
+}
+
+export function PaymentFields({ value, onChange, showTokens = true }: {
+  value: PaymentInput; onChange: (value: PaymentInput) => void; showTokens?: boolean;
+}) {
   return (
     <div className="field-grid">
       <label>Efectivo (COP)<input type="number" min={0} step={1} value={value.cash || ''}
         onChange={(event) => onChange({ ...value, cash: Number(event.target.value) })} placeholder="0" /></label>
       <label>Transferencia (COP)<input type="number" min={0} step={1} value={value.transfer || ''}
         onChange={(event) => onChange({ ...value, transfer: Number(event.target.value) })} placeholder="0" /></label>
-      <label>Fichas · {money.format(tokenValue)} c/u<input type="number" min={0} step={1} value={value.tokens || ''}
-        onChange={(event) => onChange({ ...value, tokens: Number(event.target.value) })} placeholder="0" /></label>
+      {showTokens && <TokenQuantity count={value.tokens} rate={tokenValue} onChange={(tokens) => onChange({ ...value, tokens })} />}
     </div>
   );
 }

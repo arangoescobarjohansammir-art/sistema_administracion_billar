@@ -222,6 +222,10 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     return { ...redemption, items };
   }
 
+  function physicalRedemptions() {
+    return database.prepare(redemptionSelect + ' WHERE round_id IS NULL ORDER BY tejo_redemptions.id DESC LIMIT 20').all().map(withItems);
+  }
+
   function overview() {
     const active = database.prepare(selectSession + ' WHERE closed_at IS NULL ORDER BY court_type, court_number').all();
     const roundList = database.prepare([
@@ -255,7 +259,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     return {
       active: active.map(describe),
       recent: recent.map(describe),
-      physicalRedemptions: database.prepare(redemptionSelect + ' WHERE round_id IS NULL ORDER BY tejo_redemptions.id DESC LIMIT 20').all().map(withItems),
+      physicalRedemptions: physicalRedemptions(),
       tokenCounts: {
         issued: Number(database.prepare([
           'SELECT (SELECT COUNT(*) FROM tejo_benefits WHERE issued_at IS NOT NULL) +',
@@ -270,6 +274,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
   return async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     try {
       if (path === '/api/tejo' && request.method === 'GET') return sendJson(response, 200, overview());
+      if (path === '/api/tejo/redemptions' && request.method === 'GET') return sendJson(response, 200, physicalRedemptions());
       if (request.method !== 'POST') throw new ValidationError(405, 'Método no permitido.');
       const input = await readJson(request, 24_000);
       if (!input) throw new ValidationError(400, 'No se recibió una operación válida.');
