@@ -6,9 +6,9 @@ Proyecto de portafolio para administrar un establecimiento con seis mesas de bil
 
 La aplicación local permite administrar el inventario, registrar ventas de productos y manejar cuentas por nombre. El cajero puede cobrar de inmediato, dejar un saldo fiado o registrar un abono con efectivo, transferencia y fichas.
 
-En **Billar**, puedes abrir cualquiera de las seis mesas a $6.000 por hora, anotar los productos que se entreguen y detener el tiempo cuando termine el juego. Reparte el tiempo y cada consumo por igual o con importes distintos, y cobra o fía la parte de cada persona antes de liberar la mesa.
+En **Billar**, abre la mesa, registra los productos entregados y pulsa **Terminar y cobrar**. Cobra a una persona o abre **Repartir entre personas** para dividir el tiempo y los consumos. Si se abrió por error y no tiene productos entregados, usa **Cancelar inicio** para liberar la mesa sin cargo.
 
-En **Tejo → Canchas y chicos**, selecciona una cancha de maxitejo o de tejo largo y abre un grupo con los nombres de los jugadores. Registra quién perdió cada chico y su pago, o deja el cargo fiado. Cada jugador puede recibir una ficha o consumir su valor en productos. El grupo conserva el contador y el historial de los chicos hasta que se libere la cancha. Para recibir fichas físicas a cambio de productos, usa **Tejo → Canjear fichas**.
+En **Tejo → Canchas y chicos**, elige la cancha e ingresa cuántos jugadores hay. Puedes agregar más jugadores para los próximos chicos. Registra los chicos aunque todavía no sepas quién perdió. Después, en **Asignar chicos perdidos**, escribe cuántos perdió cada persona y el nombre para cargar el importe a su cuenta. Cada jugador puede usar su derecho en una ficha o en productos incluso antes de que se asigne el resultado.
 
 En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, ingresa el conteo de ambos fondos, las transferencias verificadas, las fichas físicas y la base que dejas. El sistema guarda los conteos, las diferencias y cuánto entregas al administrador.
 
@@ -28,6 +28,8 @@ Abre <http://127.0.0.1:4173>. La instalación inicial de dependencias requiere i
 Para probar el inventario, crea una cerveza con un empaque «Canasta» de 30 unidades. Registra una entrada de 2 canastas: las existencias deben subir a 60. Registra después una salida manual de 1 unidad con su motivo: deben quedar 59.
 
 Para una venta rápida, abre un turno en **Caja** y entra en **Venta**. Selecciona los productos para agregarlos con un clic. Si prefieres el teclado, usa **F2** para buscar, **↓** para entrar a los resultados, las flechas para recorrerlos y **Enter** para agregar. Usa **F4** para abrir el cobro, **Tab** para cambiar de campo y **Esc** para volver a la cuenta sin perder lo anotado.
+
+Puedes escribir la cantidad del producto directamente en la cuenta. Al cobrar en efectivo, puedes anotar cuánto entregó el cliente y ver el devuelto antes de confirmar. Solo el importe que corresponde a la venta entra al cuadre. En **Caja**, la **Calculadora de billetes y monedas** multiplica cada denominación por la cantidad contada y pasa el total a la base o al fondo que selecciones.
 
 Para probar el fiado, crea una cuenta en **Cuentas**, luego abre **Venta** y agrega cuatro cervezas de $4.000. En **Cobrar → Mixto / fichas**, selecciona la cuenta y registra $6.000 en efectivo. Deben quedar $10.000 pendientes y salir cuatro unidades. Registra después un abono de $7.000 en efectivo y una ficha. El saldo queda en cero sin otra salida de inventario.
 

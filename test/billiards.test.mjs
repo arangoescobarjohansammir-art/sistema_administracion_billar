@@ -21,6 +21,12 @@ test('conserva la mesa, reparte tiempo y consumos, y descuenta inventario solo a
   await json('/api/billiards', 409, 'POST', { ...open, requestId: randomUUID() });
   await json('/api/billiards', 400, 'POST', { table: 7, requestId: randomUUID() });
   const base = '/api/billiards/' + session.id;
+  const accidental = await json('/api/billiards', 201, 'POST', { table: 1, requestId: randomUUID() });
+  await json('/api/billiards/' + accidental.id + '/cancel', 201, 'POST', { requestId: randomUUID() });
+  const archived = (await json('/api/billiards', 200)).recent[0];
+  assert.ok(archived.canceledAt);
+  assert.equal(archived.total, 0);
+  assert.equal(archived.shares.length, 0);
   const snapshot = (await json('/api/billiards', 200)).active[0];
   assert.equal(snapshot.rate, 6000);
   assert.equal(snapshot.stoppedAt, null);
@@ -35,6 +41,7 @@ test('conserva la mesa, reparte tiempo y consumos, y descuenta inventario solo a
   const order = { productId: product.id, quantity: 3, unitPrice: 4000, requestId: randomUUID() };
   await json(base + '/items', 201, 'POST', order);
   await json(base + '/items', 200, 'POST', order);
+  await json(base + '/cancel', 409, 'POST', { requestId: randomUUID() });
   assert.equal((await json('/api/products', 200))[0].stock, 5);
   const client = await json('/api/accounts', 201, 'POST', { name: 'Jugador de prueba' });
   assert.equal((await json('/api/accounts/' + client.id, 200)).account.balance, 0);

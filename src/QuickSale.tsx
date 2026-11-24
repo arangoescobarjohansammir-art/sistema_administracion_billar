@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { cashChange } from '../shared/tender';
+import { CashChangeField } from './CashTools';
 import { api, emptyPayment, label, message, money, PaymentBreakdown, PaymentFields, totalPayment, useOperation,
   type Account, type Payment, type PaymentInput, type Product } from './Accounts';
 
@@ -22,6 +24,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const [mode, setMode] = useState<Mode>('order');
   const [accountId, setAccountId] = useState('');
   const [payment, setPayment] = useState<PaymentInput>(emptyPayment);
+  const [received, setReceived] = useState('');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -50,11 +53,15 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
 
   const total = items.reduce((sum, { product, quantity }) => sum + product.price * quantity, 0);
   const paid = mode === 'mixed' ? totalPayment(payment) : mode === 'cash' || mode === 'transfer' ? total : 0;
+  const cashDue = mode === 'cash' ? total : mode === 'mixed' ? payment.cash : 0;
+  const change = cashChange(cashDue, received);
   const remaining = total - paid;
   const locked = busy || Boolean(loadError);
-  const canCheckout = cashOpen === true && items.length > 0 && !locked;
+  const canCheckout = cashOpen === true && items.length > 0 && !locked &&
+    items.every(({ quantity, product }) => Number.isInteger(quantity) && quantity >= 1 && quantity <= product.stock);
   const canConfirm = canCheckout && mode !== 'order' && remaining >= 0 &&
-    (remaining === 0 || Boolean(accountId)) && (mode !== 'credit' || Boolean(accountId));
+    (remaining === 0 || Boolean(accountId)) && (mode !== 'credit' || Boolean(accountId)) &&
+    (cashDue <= 0 || change === null || (Number.isInteger(change) && change >= 0));
   const visible = products.filter((product) => normalize(label(product)).includes(normalize(query.trim())));
 
   function add(product: Product) {
@@ -97,6 +104,10 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     });
   }
 
+  function changeQuantity(id: number, quantity: number) {
+    setItems((previous) => previous.map((item) => item.product.id === id ? { ...item, quantity } : item));
+  }
+
   function fromSearch(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown' || event.key === 'Enter') {
       const first = results.current?.querySelector<HTMLButtonElement>('button:not(:disabled)');
@@ -111,6 +122,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setItems([]);
     setQuery('');
     setPayment(emptyPayment);
+    setReceived('');
     setAccountId('');
     setMode('order');
   }
@@ -130,7 +142,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
         items: items.map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price })),
       });
       reset();
-      setStatus('Venta #' + receipt.id + ' guardada. ' + (remaining > 0 ? 'Saldo fiado: ' + money.format(remaining) : 'Total: ' + money.format(total)) + '.');
+      setStatus('Venta #' + receipt.id + ' guardada. ' + (remaining > 0 ? 'Saldo fiado: ' + money.format(remaining) : 'Total: ' + money.format(total)) +
+        (cashDue > 0 && change !== null ? ' · Devuelto: ' + money.format(change) : '') + '.');
       await load();
       if (active) requestAnimationFrame(() => search.current?.focus());
     } catch (error) {
@@ -186,13 +199,18 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
               <div><strong>{label(product)}</strong><span className="secondary-text">{money.format(product.price)} c/u</span></div>
               <div><b>{money.format(product.price * quantity)}</b><div className="quantity-controls">
                 <button className="secondary" type="button" disabled={locked || mode !== 'order'} aria-label={'Quitar una unidad de ' + label(product)} onClick={() => decrement(product.id)}>−</button>
-                <span>{quantity}</span>
+                <input className="quantity-input" type="number" inputMode="numeric" min={1} max={product.stock} step={1}
+                  aria-label={'Cantidad de ' + label(product)} disabled={locked || mode !== 'order'} value={quantity || ''}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onChange={(event) => changeQuantity(product.id, Number(event.target.value))} />
                 <button className="secondary" type="button" disabled={locked || mode !== 'order' || quantity >= product.stock} aria-label={'Agregar otra unidad de ' + label(product)} onClick={() => add(product)}>+</button>
               </div></div>
             </li>
           ))}</ul> : <p className="secondary-text">Elige un producto para empezar.</p>}
           <div className="order-totals">
             <div className="row-between sale-grand"><span>Total a cobrar</span><strong aria-live="polite">{money.format(total)}</strong></div>
+            {items.some(({ product, quantity }) => !Number.isInteger(quantity) || quantity < 1 || quantity > product.stock) &&
+              <p role="alert">Revisa las cantidades. Deben estar entre 1 y las unidades disponibles.</p>}
             {error && <p role="alert">{error}</p>}
             {mode === 'order' ? <div className="order-actions">
               <button type="button" disabled={!canCheckout} data-key-checkout onClick={() => showPayment('cash')}>Cobrar {money.format(total)}</button>
@@ -206,6 +224,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
                   {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </select></label>
               {mode === 'mixed' && <PaymentFields value={payment} onChange={setPayment} />}
+              {cashDue > 0 && <CashChangeField due={cashDue} received={received} onChange={setReceived} />}
               {mode === 'credit' && !accounts.length && <p>Crea una cuenta en el módulo Cuentas.</p>}
               {remaining < 0 && <p role="alert">El pago supera el total.</p>}
               {remaining > 0 && mode === 'mixed' && <p>{accountId ? 'Queda fiado: ' : 'Falta asignar: '}<strong>{money.format(remaining)}</strong></p>}

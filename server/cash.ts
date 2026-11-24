@@ -45,6 +45,10 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
     'CREATE INDEX IF NOT EXISTS cash_payments_by_shift ON cash_shift_payments(shift_id, payment_id);',
     'CREATE INDEX IF NOT EXISTS cash_redemptions_by_shift ON cash_shift_redemptions(shift_id, redemption_id);',
     'CREATE INDEX IF NOT EXISTS cash_tokens_by_shift ON cash_shift_tokens(shift_id);',
+    'CREATE TABLE IF NOT EXISTS cash_shift_slot_tokens (',
+    '  benefit_id INTEGER PRIMARY KEY REFERENCES tejo_slot_benefits(id), shift_id INTEGER NOT NULL REFERENCES cash_shifts(id)',
+    ') STRICT;',
+    'CREATE INDEX IF NOT EXISTS cash_slot_tokens_by_shift ON cash_shift_slot_tokens(shift_id);',
     'CREATE TRIGGER IF NOT EXISTS cash_track_sale AFTER INSERT ON sales BEGIN',
     '  INSERT INTO cash_shift_sales SELECT NEW.id, id FROM cash_shifts WHERE closed_at IS NULL;',
     'END;',
@@ -56,6 +60,13 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
     'END;',
     'CREATE TRIGGER IF NOT EXISTS cash_track_issued_token_insert AFTER INSERT ON tejo_benefits WHEN NEW.issued_at IS NOT NULL BEGIN',
     '  INSERT INTO cash_shift_tokens SELECT NEW.round_id, NEW.account_id, id FROM cash_shifts WHERE closed_at IS NULL;',
+    'END;',
+    'CREATE TRIGGER IF NOT EXISTS cash_track_slot_token_insert AFTER INSERT ON tejo_slot_benefits WHEN NEW.issued_at IS NOT NULL BEGIN',
+    '  INSERT INTO cash_shift_slot_tokens SELECT NEW.id, id FROM cash_shifts WHERE closed_at IS NULL;',
+    'END;',
+    'CREATE TRIGGER IF NOT EXISTS cash_track_slot_token_update AFTER UPDATE OF issued_at ON tejo_slot_benefits',
+    'WHEN NEW.issued_at IS NOT NULL AND OLD.issued_at IS NULL BEGIN',
+    '  INSERT INTO cash_shift_slot_tokens SELECT NEW.id, id FROM cash_shifts WHERE closed_at IS NULL;',
     'END;',
     'CREATE TRIGGER IF NOT EXISTS cash_track_issued_token_update AFTER UPDATE OF issued_at ON tejo_benefits',
     'WHEN NEW.issued_at IS NOT NULL AND OLD.issued_at IS NULL BEGIN',
@@ -143,7 +154,10 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
       'SELECT (SELECT COALESCE(SUM(total), 0) FROM sales WHERE account_id IS NOT NULL) -',
       '(SELECT COALESCE(SUM(cash + transfer + tokens * token_value), 0) FROM account_payments WHERE account_id IS NOT NULL) AS total',
     ].join(' ')).get()?.total;
-    const issued = database.prepare('SELECT COUNT(*) AS value FROM cash_shift_tokens WHERE shift_id = ?').get(id);
+    const issued = database.prepare([
+      'SELECT (SELECT COUNT(*) FROM cash_shift_tokens WHERE shift_id = ?) +',
+      '(SELECT COUNT(*) FROM cash_shift_slot_tokens WHERE shift_id = ?) AS value',
+    ].join(' ')).get(id, id);
     const redeemed = database.prepare([
       'SELECT COALESCE(SUM(tokens), 0) AS value FROM cash_shift_redemptions',
       'JOIN tejo_redemptions ON tejo_redemptions.id = redemption_id WHERE shift_id = ?',

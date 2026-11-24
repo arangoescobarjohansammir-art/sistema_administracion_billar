@@ -4,6 +4,7 @@ import { courtLabel, tejoCourtsPerType, tejoProductValue, type TejoType } from '
 import { type createAccounts, paymentFields, paymentTotal, saleItems, ValidationError, whole } from './accounts.js';
 import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
+import { flexibleTejo } from './tejo-flex.js';
 
 type Accounts = ReturnType<typeof createAccounts>;
 type Payment = NonNullable<ReturnType<typeof paymentFields>>;
@@ -64,6 +65,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     '  PRIMARY KEY (round_id, account_id), CHECK (issued_at IS NULL OR redemption_id IS NULL)',
     ') STRICT;',
   ].join('\n'));
+  const flexible = flexibleTejo(database, accounts);
 
   const selectSession = 'SELECT id, court_type AS courtType, court_number AS courtNumber, opened_at AS openedAt, closed_at AS closedAt FROM tejo_sessions';
 
@@ -102,6 +104,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
 
   function addRound(sessionId: number, input: Record<string, unknown>) {
     const session = openSession(sessionId);
+    if (flexible.hasSlots(sessionId)) throw new ValidationError(409, 'Actualiza la página para registrar el chico y asignar el resultado.');
     const members = players(sessionId);
     const { loserId, issueAll } = input;
     const payment = paymentFields(input.payment);
@@ -192,12 +195,17 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     return redemptionId;
   }
 
-  function close(sessionId: number) {
-    openSession(sessionId);
+  function ensureLegacyFulfilled(sessionId: number) {
     if (database.prepare([
       'SELECT 1 FROM tejo_benefits JOIN tejo_rounds ON tejo_rounds.id = tejo_benefits.round_id',
       'WHERE session_id = ? AND issued_at IS NULL AND redemption_id IS NULL LIMIT 1',
     ].join(' ')).get(sessionId)) throw new ValidationError(409, 'Registra las fichas o los consumos pendientes antes de liberar la cancha.');
+  }
+
+  function close(sessionId: number) {
+    openSession(sessionId);
+    ensureLegacyFulfilled(sessionId);
+    if (flexible.hasSlots(sessionId)) return flexible.close(sessionId);
     database.prepare('UPDATE tejo_sessions SET closed_at = ? WHERE id = ?').run(new Date().toISOString(), sessionId);
     return sessionId;
   }
@@ -230,23 +238,29 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     const byRedemption = database.prepare(redemptionSelect + ' WHERE tejo_redemptions.id = ?');
     const recent = database.prepare(selectSession + ' WHERE closed_at IS NOT NULL ORDER BY closed_at DESC, id DESC LIMIT 12').all();
     function describe(session: Record<string, unknown>) {
-      return {
-        ...session, players: players(Number(session.id)),
-        rounds: roundList.all(Number(session.id)).map((round) => ({
+      const next = flexible.describe(Number(session.id));
+      const legacy = roundList.all(Number(session.id)).map((round) => ({
           ...round,
+          number: Number(round.number),
+          loserId: next ? next.players.find((player) => player.accountId === round.loserId)?.id ?? null : round.loserId,
           benefits: benefits.all(Number(round.id)).map((benefit) => {
             const redemption = benefit.redemptionId === null ? null : byRedemption.get(Number(benefit.redemptionId));
             return { ...benefit, redemption: redemption ? withItems(redemption) : null };
           }),
-        })),
-      };
+      }));
+      return next ? { ...session, ...next, rounds: [...legacy, ...next.rounds]
+        .sort((a, b) => Number(b.number) - Number(a.number)) }
+        : { ...session, players: players(Number(session.id)), rounds: legacy };
     }
     return {
       active: active.map(describe),
       recent: recent.map(describe),
       physicalRedemptions: database.prepare(redemptionSelect + ' WHERE round_id IS NULL ORDER BY tejo_redemptions.id DESC LIMIT 20').all().map(withItems),
       tokenCounts: {
-        issued: Number(database.prepare('SELECT COUNT(*) AS total FROM tejo_benefits WHERE issued_at IS NOT NULL').get()?.total),
+        issued: Number(database.prepare([
+          'SELECT (SELECT COUNT(*) FROM tejo_benefits WHERE issued_at IS NOT NULL) +',
+          '(SELECT COUNT(*) FROM tejo_slot_benefits WHERE issued_at IS NOT NULL) AS total',
+        ].join(' ')).get()?.total),
         redeemed: Number(database.prepare('SELECT COALESCE(SUM(tokens), 0) AS total FROM tejo_redemptions WHERE round_id IS NULL').get()?.total),
         receivedAsPayment: Number(database.prepare('SELECT COALESCE(SUM(tokens), 0) AS total FROM account_payments').get()?.total),
       },
@@ -261,7 +275,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
       if (!input) throw new ValidationError(400, 'No se recibió una operación válida.');
       const { requestId, ...fields } = input;
       let action: () => number;
-      if (path === '/api/tejo') action = () => start(fields);
+      if (path === '/api/tejo') action = () => fields.playerCount === undefined ? start(fields) : flexible.start(fields);
       else if (path === '/api/tejo/redemptions') {
         const { items, payment } = itemsAndPayment(fields);
         const owner = accountId(fields.accountId);
@@ -269,12 +283,16 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
         if (!whole(tokens, 1, 1000)) throw new ValidationError(400, 'Indica cuántas fichas físicas recibiste.');
         action = () => redeem(owner, null, tokens, tokens * tejoProductValue, items, payment);
       } else {
-        const match = /^\/api\/tejo\/([1-9]\d*)\/(rounds|benefits|close)$/.exec(path);
+        const match = /^\/api\/tejo\/([1-9]\d*)\/(rounds|benefits|close|record|assign|guest|flex-benefits)$/.exec(path);
         if (!match || !id(Number(match[1]))) throw new ValidationError(404, 'Ruta de tejo no encontrada.');
         const sessionId = Number(match[1]);
         switch (match[2]) {
           case 'rounds': action = () => addRound(sessionId, fields); break;
           case 'benefits': action = () => fulfill(sessionId, fields); break;
+          case 'record': action = () => flexible.play(sessionId, fields); break;
+          case 'assign': action = () => flexible.assign(sessionId, fields); break;
+          case 'guest': action = () => flexible.addPlayer(sessionId); break;
+          case 'flex-benefits': action = () => flexible.fulfill(sessionId, fields); break;
           default: action = () => close(sessionId);
         }
       }

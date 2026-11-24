@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { cashChange } from '../shared/tender';
+import { CashChangeField } from './CashTools';
 import { billiardTables, durationLabel, elapsedSeconds, timeCharge } from '../shared/billiard';
 import { api, emptyPayment, label, message, money, PaymentFields, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
@@ -6,7 +8,7 @@ import { api, emptyPayment, label, message, money, PaymentFields, totalPayment, 
 type Line = { id: number; label: string; quantity: number; unitPrice: number };
 type Session = {
   id: number; tableNumber: number; rate: number; startedAt: number;
-  stoppedAt: number | null; closedAt: number | null; seconds: number; time: number; total: number; items: Line[];
+  stoppedAt: number | null; closedAt: number | null; canceledAt: number | null; seconds: number; time: number; total: number; items: Line[];
 };
 type Closed = Session & { shares: { saleId: number; name: string | null; total: number }[] };
 type Dashboard = { rate: number; active: Session[]; recent: Closed[] };
@@ -143,6 +145,58 @@ function AddConsumption({ products, locked, onDeliver }: {
   );
 }
 
+function TablePayment({ session, accounts, locked, onClose }: {
+  session: Session; accounts: Account[]; locked: boolean; onClose: (participants: object[]) => Promise<boolean>;
+}) {
+  const [split, setSplit] = useState(false);
+  const [method, setMethod] = useState<'cash' | 'transfer' | 'mixed' | 'credit'>('cash');
+  const [owner, setOwner] = useState('');
+  const [payment, setPayment] = useState(emptyPayment);
+  const [received, setReceived] = useState('');
+  const charge = method === 'cash' ? { ...emptyPayment, cash: session.total }
+    : method === 'transfer' ? { ...emptyPayment, transfer: session.total } : method === 'mixed' ? payment : emptyPayment;
+  const balance = session.total - totalPayment(charge);
+  const change = cashChange(charge.cash, received);
+  const ready = session.total === 0 || (balance >= 0 && (balance === 0 || owner !== '') &&
+    (charge.cash === 0 || change === null || (Number.isInteger(change) && change >= 0)));
+  if (split) return <><BillSplit session={session} accounts={accounts} locked={locked} onClose={onClose} />
+    <button type="button" className="secondary" disabled={locked} onClick={() => setSplit(false)}>Volver al cobro sencillo</button></>;
+
+  return <form onSubmit={(event) => {
+    event.preventDefault();
+    if (!ready || locked) return;
+    void onClose(session.total === 0 ? [] : [{
+      accountId: owner ? Number(owner) : null, time: session.time,
+      items: session.items.filter((item) => item.unitPrice > 0).map((item) => ({ id: item.id, amount: item.quantity * item.unitPrice })),
+      payment: charge,
+    }]);
+  }}>
+    <div className="section-title"><h3>Cobrar mesa</h3><strong>{money.format(session.total)}</strong></div>
+    <fieldset className="plain-fieldset" disabled={locked}>
+      {session.total > 0 && <>
+        <div className="actions">
+          {([['cash', 'Efectivo'], ['transfer', 'Transferencia'], ['mixed', 'Mixto / fichas'], ['credit', 'Fiado']] as const)
+            .map(([id, name]) => <button type="button" className="secondary" key={id} aria-pressed={method === id}
+              onClick={() => setMethod(id)}>{name}</button>)}
+        </div>
+        <label className="space-above">Cuenta del cliente{balance === 0 ? ' (opcional)' : ''}<select value={owner}
+          required={balance > 0} onChange={(event) => setOwner(event.target.value)}>
+          <option value="">Seleccionar cuenta</option>
+          {accounts.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
+        </select></label>
+        {method === 'mixed' && <PaymentFields value={payment} onChange={setPayment} />}
+        {charge.cash > 0 && <CashChangeField due={charge.cash} received={received} onChange={setReceived} />}
+        {balance < 0 && <p role="alert">El pago supera el total de la mesa.</p>}
+        {balance > 0 && owner && <p>Saldo que queda fiado: <strong>{money.format(balance)}</strong></p>}
+      </>}
+      <div className="actions">
+        <button disabled={!ready}>{session.total === 0 ? 'Cerrar sin cargo' : 'Guardar cobro y liberar mesa'}</button>
+        {session.total > 0 && <button type="button" className="secondary" onClick={() => setSplit(true)}>Repartir entre personas</button>}
+      </div>
+    </fieldset>
+  </form>;
+}
+
 export function Billiards() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -153,6 +207,7 @@ export function Billiards() {
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const write = useOperation();
 
   async function load() {
@@ -215,6 +270,7 @@ export function Billiards() {
             return (
               <li key={number}><button className="table-button" aria-pressed={table === number} disabled={busy} onClick={() => {
                 setTable(number);
+                setCanceling(false);
                 setStatus('');
                 setError('');
               }}>
@@ -236,24 +292,37 @@ export function Billiards() {
                 <span>Consumos <strong>{money.format(consumption)}</strong></span>
                 <span>Total <strong>{money.format(liveTime + consumption)}</strong></span>
               </div>
-              {session.stoppedAt === null && <button className="secondary" disabled={locked}
-                onClick={() => void operate('billiards/' + session.id + '/stop', {}, 'Tiempo registrado. Puedes repartir la cuenta.')}>Detener tiempo</button>}
               {session.items.length > 0 && <ul className="sale-lines">{session.items.map((item) => (
                 <li key={item.id}><span>{item.quantity} × {item.label}</span><strong>{money.format(item.quantity * item.unitPrice)}</strong></li>
               ))}</ul>}
-              <AddConsumption key={session.id} products={products} locked={locked}
+              {session.stoppedAt === null && <AddConsumption key={session.id} products={products} locked={locked}
                 onDeliver={(product, quantity) => operate('billiards/' + session.id + '/items', {
                   productId: product.id, quantity, unitPrice: product.price,
-                }, 'Consumo entregado y registrado.')} />
-              {session.stoppedAt !== null && <BillSplit key={session.id}
+                }, 'Consumo entregado y registrado.')} />}
+              {session.stoppedAt === null && <button type="button" disabled={locked}
+                onClick={() => { setCanceling(false); void operate('billiards/' + session.id + '/stop', {}, 'Tiempo detenido.'); }}>Terminar y cobrar</button>}
+              {session.stoppedAt !== null && <TablePayment key={session.id}
                 session={session} accounts={accounts} locked={locked}
                 onClose={(participants) => operate('billiards/' + session.id + '/close', { participants }, 'Cuenta liquidada. La mesa está libre.')} />}
+              {session.stoppedAt !== null && <details className="bill-counter">
+                <summary>Agregar un consumo olvidado</summary>
+                <AddConsumption products={products} locked={locked}
+                  onDeliver={(product, quantity) => operate('billiards/' + session.id + '/items', {
+                    productId: product.id, quantity, unitPrice: product.price,
+                  }, 'Consumo entregado y registrado.')} />
+              </details>}
+              {session.items.length === 0 && (canceling ? <div className="sale-callout">
+                <strong>¿Liberar la mesa sin cobrar?</strong>
+                <div className="actions"><button type="button" disabled={locked} onClick={async () => {
+                  if (await operate('billiards/' + session.id + '/cancel', {}, 'Inicio cancelado. La mesa quedó libre.')) setCanceling(false);
+                }}>Sí, cancelar</button><button type="button" className="secondary" disabled={locked} onClick={() => setCanceling(false)}>Conservar mesa</button></div>
+              </div> : <button type="button" className="secondary" disabled={locked} onClick={() => setCanceling(true)}>Cancelar inicio</button>)}
             </>}
         </section>
-        <h3>Últimas mesas liquidadas</h3>
+        <h3>Historial de mesas</h3>
         {!dashboard.recent.length ? <p>Todavía no se ha liquidado una mesa.</p> : <ul className="ledger-list">{dashboard.recent.map((entry) => (
           <li key={entry.id}>
-            <div className="row-between"><strong>Mesa {entry.tableNumber} · {durationLabel(entry.seconds)}</strong><strong>{money.format(entry.total)}</strong></div>
+            <div className="row-between"><strong>Mesa {entry.tableNumber} · {entry.canceledAt === null ? durationLabel(entry.seconds) : 'Inicio cancelado'}</strong><strong>{money.format(entry.total)}</strong></div>
             {entry.shares.length > 0 && <ul className="sale-lines">{entry.shares.map((share) => (
               <li key={share.saleId}><span>{share.name ?? 'Pago sin nombre'} · Venta #{share.saleId}</span><strong>{money.format(share.total)}</strong></li>
             ))}</ul>}

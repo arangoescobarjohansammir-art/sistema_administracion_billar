@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { cashMovements, type CashMovementKind } from '../shared/cash';
 import { api, message, money, useOperation } from './Accounts';
+import { BillCounter } from './CashTools';
 
 type Shift = {
   id: number; cashier: string; openedAt: string; openingBase: number; previousBase: number | null; openingNote: string;
@@ -59,6 +60,7 @@ function Opening({ previousBase, previousTokens, locked, act }: {
         <label className="wide">{mismatch ? 'Explicación de la diferencia' : 'Nota de apertura (opcional)'}
           <input name="note" required={mismatch} maxLength={300} /></label>
       </fieldset>
+      <BillCounter disabled={locked} targets={[{ label: 'Usar como base contada', use: setBase }]} />
       <button disabled={locked}>Abrir caja</button>
     </form>
   );
@@ -181,6 +183,10 @@ function CloseForm({ detail, locked, act }: { detail: Detail; locked: boolean; a
           <input name="note" maxLength={300} required={mismatch} /></label>
       </fieldset>
       <Reconciliation rows={rows} />
+      <BillCounter disabled={locked} targets={[
+        { label: 'Usar para caja de ventas', use: setSales },
+        { label: 'Usar para fondo de compras', use: setPurchases },
+      ]} />
       <p>Fichas esperadas: <strong>{totals.expectedTokens ?? '—'}</strong> · Diferencia: <Difference value={tokenDifference} tokens /></p>
       {!validBase && sales !== '' && base !== '' && <p role="alert">La base siguiente no puede superar el efectivo contado en ventas.</p>}
       {validBase && purchases !== '' && <p>Entrega al administrador: <strong>{money.format(Number(sales) - Number(base))}</strong> de ventas y{' '}

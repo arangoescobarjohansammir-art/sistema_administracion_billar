@@ -63,7 +63,10 @@ export function createBilliards(database: DatabaseSync, accounts: Accounts) {
     ') STRICT;',
   ].join('\n'));
 
-  const sessions = 'SELECT id, table_number AS tableNumber, rate, started_at AS startedAt, stopped_at AS stoppedAt, closed_at AS closedAt FROM billiard_sessions';
+  if (!database.prepare('PRAGMA table_info(billiard_sessions)').all().some(({ name }) => name === 'canceled_at')) {
+    database.exec('ALTER TABLE billiard_sessions ADD COLUMN canceled_at INTEGER');
+  }
+  const sessions = 'SELECT id, table_number AS tableNumber, rate, started_at AS startedAt, stopped_at AS stoppedAt, closed_at AS closedAt, canceled_at AS canceledAt FROM billiard_sessions';
 
   function sessionItems(id: number): BilliardItem[] {
     return database.prepare(
@@ -83,7 +86,7 @@ export function createBilliards(database: DatabaseSync, accounts: Accounts) {
   function describe(session: Record<string, unknown>, now: number) {
     const seconds = elapsedSeconds(Number(session.startedAt), Number(session.stoppedAt ?? now));
     const items = sessionItems(Number(session.id));
-    const time = timeCharge(seconds, Number(session.rate));
+    const time = session.canceledAt === null ? timeCharge(seconds, Number(session.rate)) : 0;
     return { ...session, seconds, time, total: time + items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0), items };
   }
 
@@ -101,6 +104,15 @@ export function createBilliards(database: DatabaseSync, accounts: Accounts) {
     if (session.stoppedAt !== null) throw new ValidationError(409, 'El cronómetro ya está detenido.');
     database.prepare('UPDATE billiard_sessions SET stopped_at = ? WHERE id = ?')
       .run(Math.max(Date.now(), Number(session.startedAt)), id);
+    return id;
+  }
+
+  function cancelTable(id: number) {
+    const session = openSession(id);
+    if (sessionItems(id).length) throw new ValidationError(409, 'La mesa tiene productos entregados. Debe liquidarse para conservar los consumos.');
+    const now = Math.max(Date.now(), Number(session.stoppedAt ?? session.startedAt));
+    database.prepare('UPDATE billiard_sessions SET stopped_at = COALESCE(stopped_at, ?), closed_at = ?, canceled_at = ? WHERE id = ?')
+      .run(now, now, now, id);
     return id;
   }
 
@@ -205,11 +217,11 @@ export function createBilliards(database: DatabaseSync, accounts: Accounts) {
         fingerprint = input.table;
         action = () => startTable(input.table);
       } else {
-        const match = /^\/api\/billiards\/([1-9]\d*)\/(stop|items|close)$/.exec(path);
+        const match = /^\/api\/billiards\/([1-9]\d*)\/(stop|items|close|cancel)$/.exec(path);
         if (!match || !Number.isSafeInteger(Number(match[1]))) throw new ValidationError(404, 'Ruta de billar no encontrada.');
         const id = Number(match[1]);
-        if (match[2] === 'stop') {
-          action = () => stopTable(id);
+        if (match[2] === 'stop' || match[2] === 'cancel') {
+          action = match[2] === 'stop' ? () => stopTable(id) : () => cancelTable(id);
           fingerprint = null;
         } else if (match[2] === 'items') {
           const { productId, quantity, unitPrice } = input;

@@ -213,6 +213,12 @@ kbd { display: inline-block; padding: 0.08rem 0.32rem; border: 1px solid var(--c
 .register-lines li > div:last-child { text-align: right; }
 .quantity-controls { display: flex; gap: 0.45rem; align-items: center; justify-content: flex-end; margin-top: 0.34rem; font-variant-numeric: tabular-nums; }
 .quantity-controls button { min-width: 2.35rem; min-height: 2.35rem; padding: 0.15rem; font-size: 1.18rem; }
+.quantity-controls .quantity-input { width: 4.1rem; margin: 0; padding: 0.39rem 0.15rem; text-align: center; }
+.sale-tender, .bill-counter { border: 1px solid var(--line); border-radius: 0.6rem; background: var(--paper); padding: 0.65rem; margin: 0.65rem 0; }
+.sale-tender .row-between { color: var(--accent-ink); }
+.space-above { margin-top: 0.75rem; }
+.bill-counter summary { cursor: pointer; font-weight: 750; }
+.bill-count-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: 0.5rem; margin-top: 0.65rem; }
 .order-totals { margin: 0 -1rem -1rem; background: var(--surface-tint); border-top: 1px solid var(--line); border-radius: 0 0 0.95rem 0.95rem; padding: 0.9rem 1rem 1rem; }
 .sale-grand { margin-bottom: 0.65rem; align-items: center; font-weight: 700; }
 .sale-grand strong { color: var(--accent-ink); font-size: clamp(1.45rem, 2.5vw, 2rem); font-variant-numeric: tabular-nums; letter-spacing: -0.045em; }

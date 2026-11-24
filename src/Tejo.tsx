@@ -3,14 +3,15 @@ import { courtLabel, tejoCourtsPerType, tejoProductValue, tejoTypes, type TejoTy
 import { api, emptyPayment, label, message, money, PaymentFields, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
 
-type Player = Pick<Account, 'id' | 'name'>;
+type Player = Pick<Account, 'id' | 'name'> & { accountId?: number | null };
 type Redemption = {
   id: number; name: string | null; tokens: number; allowance: number; subtotal: number; extra: number;
   createdAt: string; items: { label: string; quantity: number; unitPrice: number }[];
 };
-type Benefit = { accountId: number; name: string; issuedAt: string | null; redemption: Redemption | null };
-type Round = { id: number; number: number; loser: string; total: number; benefits: Benefit[] };
-type Group = { id: number; courtType: TejoType; courtNumber: number; players: Player[]; rounds: Round[] };
+type Benefit = { accountId: number; customerId?: number | null; name: string; issuedAt: string | null; redemption: Redemption | null };
+type Round = { id: number; number: number; loser: string | null; loserId: number | null; total: number; benefits: Benefit[]; flexible?: boolean };
+type Group = { id: number; courtType: TejoType; courtNumber: number; flexible?: boolean; players: Player[]; rounds: Round[] };
+type RedeemEntry = { groupId: number; roundId: number; player: Benefit; flexible?: boolean };
 type Overview = {
   active: Group[]; recent: Group[]; physicalRedemptions: Redemption[];
   tokenCounts: { issued: number; redeemed: number; receivedAsPayment: number };
@@ -18,58 +19,67 @@ type Overview = {
 type Action = (path: string, payload: object, success: string) => Promise<boolean>;
 type Basket = { product: Product; quantity: number }[];
 
-function StartGroup({ accounts, locked, onAddAccount, onStart }: {
-  accounts: Account[]; locked: boolean;
-  onAddAccount: (name: string) => Promise<Account | undefined>;
-  onStart: (players: number[]) => Promise<boolean>;
-}) {
-  const [members, setMembers] = useState<number[]>([]);
-  const [selected, setSelected] = useState('');
-  const [newName, setNewName] = useState('');
+function StartGroup({ locked, onStart }: { locked: boolean; onStart: (count: number) => Promise<boolean> }) {
+  const [count, setCount] = useState('2');
+  return <form onSubmit={(event) => { event.preventDefault(); if (!locked) void onStart(Number(count)); }}>
+    <h4>Abrir cancha</h4>
+    <label>Número de jugadores<input type="number" min={2} max={20} step={1} inputMode="numeric" required
+      disabled={locked} value={count} onChange={(event) => setCount(event.target.value)} /></label>
+    <button disabled={locked}>Iniciar grupo</button>
+  </form>;
+}
 
-  async function addAccount(event: FormEvent<HTMLFormElement>) {
+function RecordChicos({ group, accounts, locked, act }: { group: Group; accounts: Account[]; locked: boolean; act: Action }) {
+  const [issueAll, setIssueAll] = useState(false);
+  const [counts, setCounts] = useState<Record<number, string>>({});
+  const [names, setNames] = useState<Record<number, string>>({});
+  const pending = group.rounds.filter((round) => round.loser === null);
+  const total = Object.values(counts).reduce((sum, count) => sum + Number(count), 0);
+  const missingName = group.players.some((player) => Number(counts[player.id]) > 0 && player.accountId === null && !names[player.id]?.trim());
+  const base = 'tejo/' + group.id;
+
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!newName.trim() || locked) return;
-    const result = await onAddAccount(newName);
-    if (result) {
-      setMembers((previous) => [...previous, result.id]);
-      setNewName('');
+    if (locked || total <= 0 || total > pending.length || missingName) return;
+    const losses = group.players.filter((player) => Number(counts[player.id]) > 0)
+      .map((player) => ({ playerId: player.id, count: Number(counts[player.id]), name: names[player.id] }));
+    if (await act(base + '/assign', { losses }, 'Chicos asignados. Puedes cobrar el saldo en Cuentas.')) {
+      setCounts({});
+      setNames({});
     }
   }
 
-  return (
-    <div className="tejo-forms">
-      <form onSubmit={(event) => { event.preventDefault(); if (!locked && members.length >= 2) void onStart(members); }}>
-        <h4>Jugadores del grupo</h4>
-        <fieldset className="plain-fieldset" disabled={locked}>
-          <div className="product-picker">
-            <label>Cuenta existente<select value={selected} onChange={(event) => setSelected(event.target.value)}>
-              <option value="">Seleccionar jugador</option>
-              {accounts.filter(({ id }) => !members.includes(id)).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-            </select></label>
-            <button type="button" className="secondary" disabled={!selected || members.length >= 20} onClick={() => {
-              setMembers((previous) => [...previous, Number(selected)]);
-              setSelected('');
-            }}>Agregar</button>
-          </div>
-          {members.length > 0 && <ul className="sale-lines">{members.map((id) => {
-            const name = accounts.find((account) => account.id === id)?.name;
-            return <li key={id}><span>{name}</span><button className="secondary" type="button"
-              onClick={() => setMembers((previous) => previous.filter((member) => member !== id))}>Quitar {name}</button></li>;
-          })}</ul>}
-          <p>{members.length} participantes · mínimo 2</p>
-          <button disabled={members.length < 2}>Abrir cancha</button>
-        </fieldset>
-      </form>
-      <form onSubmit={addAccount}>
-        <h4>Jugador nuevo</h4>
-        <fieldset className="plain-fieldset" disabled={locked || members.length >= 20}>
-          <label>Nombre o apodo<input required value={newName} maxLength={100} onChange={(event) => setNewName(event.target.value)} /></label>
-          <button className="secondary">Crear cuenta y agregar</button>
-        </fieldset>
-      </form>
+  return <>
+    <div className="sale-panel">
+      <div className="section-title"><h4>{group.players.length} jugadores</h4>
+        <button type="button" className="secondary" disabled={locked || group.players.length >= 20}
+          onClick={() => void act(base + '/guest', {}, 'Jugador agregado para los próximos chicos.')}>Agregar jugador</button></div>
+      <p>{group.players.map((player) => player.name + ' (' + group.rounds.filter((round) => round.loserId === player.id).length + ' perdidos)').join(' · ')}</p>
+      <label className="check"><input type="checkbox" checked={issueAll} disabled={locked} onChange={(event) => setIssueAll(event.target.checked)} />
+        Ya entregué una ficha a cada jugador de este chico</label>
+      <button type="button" disabled={locked} onClick={async () => {
+        if (await act(base + '/record', { issueAll }, 'Chico registrado. Puedes asignar quién perdió después.')) setIssueAll(false);
+      }}>Registrar chico {group.rounds.length + 1}</button>
     </div>
-  );
+    {pending.length > 0 && <form onSubmit={save}>
+      <div className="section-title"><h4>Asignar chicos perdidos</h4><strong>{pending.length} por asignar</strong></div>
+      <datalist id={'tejo-customer-names-' + group.id}>{accounts.map((account) => <option key={account.id} value={account.name} />)}</datalist>
+      <fieldset className="plain-fieldset" disabled={locked}>
+        {group.players.map((player) => {
+          const eligible = pending.filter((round) => round.benefits.some((benefit) => benefit.accountId === player.id)).length;
+          return eligible > 0 && <div className="field-grid" key={player.id}>
+            <label>{player.name} · chicos perdidos<input type="number" min={0} max={eligible} step={1} inputMode="numeric" placeholder="0"
+              value={counts[player.id] ?? ''} onChange={(event) => setCounts((previous) => ({ ...previous, [player.id]: event.target.value }))} /></label>
+            {player.accountId === null && Number(counts[player.id]) > 0 && <label>Nombre de {player.name.toLowerCase()}
+              <input required maxLength={100} list={'tejo-customer-names-' + group.id} value={names[player.id] ?? ''}
+                onChange={(event) => setNames((previous) => ({ ...previous, [player.id]: event.target.value }))} /></label>}
+          </div>;
+        })}
+        {total > pending.length && <p role="alert">Solo quedan {pending.length} chicos por asignar.</p>}
+        <button disabled={total <= 0 || total > pending.length || missingName}>Guardar pérdidas</button>
+      </fieldset>
+    </form>}
+  </>;
 }
 
 function RegisterRound({ group, locked, act }: { group: Group; locked: boolean; act: Action }) {
@@ -110,7 +120,7 @@ function RegisterRound({ group, locked, act }: { group: Group; locked: boolean; 
 }
 
 function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
-  entry?: { groupId: number; roundId: number; player: Benefit };
+  entry?: RedeemEntry;
   accounts: Account[]; products: Product[]; locked: boolean; act: Action; onCancel?: () => void;
 }) {
   const [tokens, setTokens] = useState(1);
@@ -123,7 +133,7 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
   const extra = Math.max(0, subtotal - allowance);
   const unused = Math.max(0, allowance - subtotal);
   const remaining = extra - totalPayment(payment);
-  const named = entry || payee;
+  const named = Boolean(payee || (entry && (!entry.flexible || entry.player.customerId)));
 
   function add() {
     const product = products.find((item) => item.id === Number(selected));
@@ -137,8 +147,9 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
     if (locked || !basket.length || remaining < 0 || (!named && remaining > 0)) return;
     const items = basket.map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price }));
     if (entry) {
-      if (await act('tejo/' + entry.groupId + '/benefits', {
+      if (await act('tejo/' + entry.groupId + (entry.flexible ? '/flex-benefits' : '/benefits'), {
         roundId: entry.roundId, playerId: entry.player.accountId, choice: 'products', items, payment,
+        accountId: payee ? Number(payee) : null,
       }, 'Consumo del chico registrado.')) onCancel?.();
     } else if (await act('tejo/redemptions', { tokens, accountId: payee ? Number(payee) : null, items, payment }, 'Canje registrado.')) {
       setTokens(1);
@@ -185,6 +196,11 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
           <span>Excedente por cobrar <strong>{money.format(extra)}</strong></span>
         </div>
         {basket.length > 0 && unused > 0 && <p>Si confirmas, se pierden {money.format(unused)} del canje sin cambio ni saldo.</p>}
+        {extra > 0 && entry?.flexible && !entry.player.customerId && <label>Cuenta para fiar el excedente (opcional)
+          <select value={payee} onChange={(event) => setPayee(event.target.value)}>
+            <option value="">Sin nombre · cobrar excedente completo</option>
+            {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+          </select></label>}
         {(extra > 0 || totalPayment(payment) > 0) && <PaymentFields value={payment} onChange={setPayment} />}
         {remaining < 0 && <p role="alert">El pago supera el excedente.</p>}
         {remaining > 0 && <p>{named ? 'Quedará fiado: ' + money.format(remaining) : 'Paga el excedente completo o elige una cuenta.'}</p>}
@@ -204,13 +220,14 @@ function RedeemedProducts({ redemption }: { redemption: Redemption }) {
 }
 
 function RoundHistory({ group, locked, onRedeem, act }: {
-  group: Group; locked?: boolean; onRedeem?: (roundId: number, player: Benefit) => void; act?: Action;
+  group: Group; locked?: boolean; onRedeem?: (round: Round, player: Benefit) => void; act?: Action;
 }) {
   if (!group.rounds.length) return <p>Sin chicos registrados.</p>;
   return (
     <ul className="ledger-list">{group.rounds.map((round) => (
-      <li key={round.id}>
-        <div className="row-between"><strong>Chico {round.number} · perdió {round.loser}</strong><strong>{money.format(round.total)}</strong></div>
+      <li key={round.number}>
+        <div className="row-between"><strong>Chico {round.number} · {round.loser ? (round.flexible ? 'cargo de ' : 'perdió ') + round.loser : 'sin perdedor asignado'}</strong><strong>{money.format(round.total)}</strong></div>
+        <details className="space-above"><summary>Fichas y consumos · {round.benefits.filter((benefit) => !benefit.issuedAt && !benefit.redemption).length} pendientes</summary>
         <ul className="tejo-benefits">{round.benefits.map((benefit) => (
           <li key={benefit.accountId}>
             <div className="row-between"><strong>{benefit.name}</strong>
@@ -220,13 +237,13 @@ function RoundHistory({ group, locked, onRedeem, act }: {
               {benefit.redemption.extra > 0 && <p>Excedente: {money.format(benefit.redemption.extra)}</p>}
             </>}
             {!benefit.issuedAt && !benefit.redemption && act && onRedeem && <div className="actions">
-              <button className="secondary" type="button" disabled={locked} onClick={() => void act('tejo/' + group.id + '/benefits', {
+              <button className="secondary" type="button" disabled={locked} onClick={() => void act('tejo/' + group.id + (round.flexible ? '/flex-benefits' : '/benefits'), {
                 roundId: round.id, playerId: benefit.accountId, choice: 'token',
               }, 'Ficha entregada y registrada.')}>Entregar ficha</button>
-              <button className="secondary" type="button" disabled={locked} onClick={() => onRedeem(round.id, benefit)}>Registrar consumo</button>
+              <button className="secondary" type="button" disabled={locked} onClick={() => onRedeem(round, benefit)}>Registrar consumo</button>
             </div>}
           </li>
-        ))}</ul>
+        ))}</ul></details>
       </li>
     ))}</ul>
   );
@@ -239,7 +256,7 @@ export function Tejo() {
   const [mode, setMode] = useState<'courts' | 'tokens'>('courts');
   const [type, setType] = useState<TejoType>('maxi');
   const [court, setCourt] = useState(1);
-  const [redemption, setRedemption] = useState<{ groupId: number; roundId: number; player: Benefit } | null>(null);
+  const [redemption, setRedemption] = useState<RedeemEntry | null>(null);
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -282,23 +299,6 @@ export function Tejo() {
     }
   }
 
-  async function addAccount(name: string) {
-    if (locked) return;
-    setBusy(true);
-    setError('');
-    setStatus('');
-    try {
-      const account = await api<Account>('accounts', { name });
-      setAccounts((previous) => [...previous, account]);
-      setStatus('Cuenta creada.');
-      return account;
-    } catch (error) {
-      setError(message(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function clearSelection() {
     setRedemption(null);
     setError('');
@@ -308,6 +308,7 @@ export function Tejo() {
   const group = overview?.active.find((item) => item.courtType === type && item.courtNumber === court);
   const benefits = group?.rounds.flatMap((round) => round.benefits) ?? [];
   const pending = benefits.filter((benefit) => !benefit.issuedAt && !benefit.redemption).length;
+  const pendingResults = group?.rounds.filter((round) => round.loser === null).length ?? 0;
 
   return (
     <section aria-labelledby="tejo-title">
@@ -336,22 +337,24 @@ export function Tejo() {
             {group && <strong>{group.rounds.length} {group.rounds.length === 1 ? 'chico registrado' : 'chicos registrados'}</strong>}</div>
           {error && <p role="alert">{error}</p>}
           {status && <p role="status">{status}</p>}
-          {!group ? <StartGroup key={courtLabel(type, court)} accounts={accounts} locked={locked}
-            onAddAccount={addAccount} onStart={(players) => act('tejo', { courtType: type, courtNumber: court, players }, 'Cancha abierta.')} />
+          {!group ? <StartGroup key={courtLabel(type, court)} locked={locked}
+            onStart={(playerCount) => act('tejo', { courtType: type, courtNumber: court, playerCount }, 'Cancha abierta.')} />
             : <>
-              <p>{group.players.map((player) => player.name).join(' · ')}</p>
+              {!group.flexible && <p>{group.players.map((player) => player.name).join(' · ')}</p>}
               <p>{benefits.filter((benefit) => benefit.issuedAt).length} fichas entregadas ·{' '}
                 {benefits.filter((benefit) => benefit.redemption).length} consumos · {pending} pendientes</p>
-              <RegisterRound key={group.id} group={group} locked={locked} act={act} />
-              {redemption && redemption.groupId === group.id && <RedeemForm key={redemption.roundId + ':' + redemption.player.accountId}
+              {group.flexible ? <RecordChicos key={group.id} group={group} locked={locked} act={act} accounts={accounts} />
+                : <RegisterRound key={group.id} group={group} locked={locked} act={act} />}
+              {redemption && redemption.groupId === group.id && <RedeemForm key={String(redemption.flexible) + ':' + redemption.roundId + ':' + redemption.player.accountId}
                 entry={redemption} accounts={accounts} products={products} locked={locked} act={act} onCancel={() => setRedemption(null)} />}
               <RoundHistory group={group} locked={locked} act={act}
-                onRedeem={(roundId, player) => {
-                  setError(''); setStatus(''); setRedemption({ groupId: group.id, roundId, player });
+                onRedeem={(round, player) => {
+                  setError(''); setStatus(''); setRedemption({ groupId: group.id, roundId: round.id, player, flexible: round.flexible });
                 }} />
-              <button className="secondary" disabled={locked || pending > 0}
+              <button className="secondary" disabled={locked || pending > 0 || pendingResults > 0}
                 onClick={() => void act('tejo/' + group.id + '/close', {}, 'Grupo cerrado. Cancha libre.')}>Cerrar grupo y liberar cancha</button>
               {pending > 0 && <p>Registra los derechos pendientes para liberar la cancha.</p>}
+              {pendingResults > 0 && <p>Asigna los chicos perdidos para liberar la cancha.</p>}
             </>}
         </section>
         {overview.recent.length > 0 && <section className="tejo-history"><h3>Últimos grupos cerrados</h3>

@@ -96,6 +96,19 @@ export function createAccounts(database: DatabaseSync) {
     return account;
   }
 
+  function accountForName(value: unknown, reuse: boolean) {
+    const name = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+    if (!name || name.length > 100) throw new ValidationError(400, 'Escribe un nombre o apodo de hasta 100 caracteres.');
+    const key = name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
+    const result = database.prepare(
+      'INSERT INTO customer_accounts (name, name_key, created_at) VALUES (?, ?, ?) ON CONFLICT(name_key) DO NOTHING',
+    ).run(name, key, new Date().toISOString());
+    if (result.changes) return accountById(Number(result.lastInsertRowid));
+    if (!reuse) throw new ValidationError(409, 'Ya existe una cuenta con ese nombre. Busca la cuenta o usa un apodo distinto.');
+    const account = database.prepare('SELECT id FROM customer_accounts WHERE name_key = ?').get(key);
+    return accountById(Number(account?.id));
+  }
+
   function writeOnce(requestId: unknown, fingerprint: string, write: () => number) {
     if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
       throw new ValidationError(400, 'Identificador de operación inválido.');
@@ -222,14 +235,7 @@ export function createAccounts(database: DatabaseSync) {
       }
       if (path === '/api/accounts' && request.method === 'POST') {
         const input = await readJson(request);
-        const name = typeof input?.name === 'string' ? input.name.trim().replace(/\s+/g, ' ') : '';
-        if (!name || name.length > 100) throw new ValidationError(400, 'Escribe un nombre o apodo de hasta 100 caracteres.');
-        const key = name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
-        const result = database.prepare(
-          'INSERT INTO customer_accounts (name, name_key, created_at) VALUES (?, ?, ?) ON CONFLICT(name_key) DO NOTHING',
-        ).run(name, key, new Date().toISOString());
-        if (!result.changes) throw new ValidationError(409, 'Ya existe una cuenta con ese nombre. Busca la cuenta o usa un apodo distinto.');
-        return sendJson(response, 201, accountById(Number(result.lastInsertRowid)));
+        return sendJson(response, 201, accountForName(input?.name, false));
       }
       const match = /^\/api\/accounts\/([1-9]\d*)(\/payments)?$/.exec(path);
       if (!match || !Number.isSafeInteger(Number(match[1]))) throw new ValidationError(404, 'Ruta de cuentas no encontrada.');
@@ -248,5 +254,5 @@ export function createAccounts(database: DatabaseSync) {
       return sendJson(response, error.status, { error: error.message });
     }
   }
-  return { handle, accountById, writeOnce, insertSale, insertPayment, insertAllocatedLine, requireShift };
+  return { handle, accountById, accountForName, writeOnce, insertSale, insertPayment, insertAllocatedLine, requireShift };
 }
