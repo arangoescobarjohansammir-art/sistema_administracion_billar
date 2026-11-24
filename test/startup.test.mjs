@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { testServer } from './support/local-server.mjs';
 
@@ -15,6 +15,7 @@ test('mantiene unidos el servidor y la pantalla si se recompila mientras está a
   });
   await cp('dist', build, { recursive: true });
   await writeFile(join(folder, 'package.json'), '{"type":"module"}');
+  await symlink(resolve('node_modules'), join(folder, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   await server.start();
 
   const response = await server.fetch('/');

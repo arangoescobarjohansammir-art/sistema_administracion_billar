@@ -5,7 +5,7 @@ import test from 'node:test';
 import { testServer } from './support/local-server.mjs';
 
 test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno', { timeout: 20000 }, async (t) => {
-  const { start, stop, json, cleanup, openShift } = await testServer();
+  const { start, stop, json, fetch, cleanup, openShift } = await testServer();
   t.after(cleanup);
   await start();
   const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
@@ -24,6 +24,7 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   assert.equal((await json('/api/products', 200))[0].stock, 300);
   const first = await openShift();
   const shift = '/api/cash/' + first.id;
+  await json(shift + '/report.pdf', 409);
   await post('/api/cash', 409, { cashier: 'Otro', openingBase: 0, openingTokens: 0, note: '' });
   await post('/api/sales', 201, sale(243, cash(243_000)));
   await post('/api/sales', 201, sale(20, { cash: 7000, transfer: 10_000, tokens: 1 }));
@@ -69,6 +70,13 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   await post(shift + '/close', 201, closing);
   await post(shift + '/close', 200, closing);
   const closed = await json(shift, 200);
+  const report = await fetch(shift + '/report.pdf');
+  assert.equal(report.status, 200);
+  assert.equal(report.headers.get('content-type'), 'application/pdf');
+  assert.match(report.headers.get('content-disposition'), /^attachment; filename="cierre-caja-1-\d{4}-\d{2}-\d{2}\.pdf"$/);
+  const pdf = Buffer.from(await report.arrayBuffer());
+  assert.match(pdf.subarray(0, 8).toString('ascii'), /^%PDF-/);
+  assert.ok(pdf.length > 3000);
   assert.equal(closed.totals.salesDelivery, 180_000);
   assert.equal(closed.totals.purchasesDelivery, 120_000);
   assert.equal(closed.totals.salesDifference, 0);

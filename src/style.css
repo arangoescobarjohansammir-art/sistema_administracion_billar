@@ -171,6 +171,9 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--ac
 .redemption-payment { margin: 0.9rem 0; }
 .redemption-payment label { margin-top: 0.55rem; }
 .cash-layout { display: grid; gap: 1.25rem; }
+.download-report { display: inline-flex; align-items: center; min-height: 44px; padding: 0.65rem 1rem;
+  border-radius: 0.5rem; background: var(--accent); color: var(--on-accent); font-weight: 700; text-decoration: none; }
+.download-report:hover { background: var(--accent-dark); }
 .cash-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: 0.65rem; }
 .cash-stats > div { background: var(--paper); border: 1px solid var(--line); border-radius: 0.65rem; padding: 0.65rem; }
 .cash-stats dt { color: var(--secondary-text); }

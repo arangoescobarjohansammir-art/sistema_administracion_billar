@@ -200,8 +200,12 @@ function ShiftSummary({ detail }: { detail: Detail }) {
   const { shift, totals } = detail;
   return (
     <section aria-label="Resumen del turno">
-      <div className="section-title"><h3>Turno #{shift.id} · {shift.cashier}</h3>
-        <span>{shift.closedAt ? 'Cerrado ' + date.format(new Date(shift.closedAt)) : 'Abierto ' + date.format(new Date(shift.openedAt))}</span></div>
+      <div className="section-title"><div>
+        <h3>Turno #{shift.id} · {shift.cashier}</h3>
+        <span>{shift.closedAt ? 'Cerrado ' + date.format(new Date(shift.closedAt)) : 'Abierto ' + date.format(new Date(shift.openedAt))}</span>
+      </div>
+        {shift.closedAt && <a className="download-report" href={'/api/cash/' + shift.id + '/report.pdf'} download>Descargar informe PDF</a>}
+      </div>
       <p>Base de apertura: <strong>{money.format(shift.openingBase)}</strong>{shift.openingNote ? ' · ' + shift.openingNote : ''}</p>
       {shift.previousBase !== null && shift.previousBase !== shift.openingBase &&
         <p>Base que dejó el turno anterior: <strong>{money.format(shift.previousBase)}</strong></p>}

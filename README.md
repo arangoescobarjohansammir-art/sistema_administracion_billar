@@ -18,6 +18,8 @@ En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las f
 
 El cuadre de fichas suma las recibidas por pago y canje, y resta las entregadas en tejo. El próximo turno muestra cuántas se contaron al cierre anterior. Si estás actualizando con un turno abierto, puedes completar su conteo inicial desde **Caja** y registrar de dónde salió ese dato.
 
+Al guardar un cierre, el sistema muestra **Descargar informe PDF**. También puedes volver a descargarlo desde **Caja → Historial de cierres**. El informe del Club de Tejo Patio Bonito incluye el encargado, el cajero, las horas del turno y de emisión, el cuadre de efectivo, transferencias y fichas, la entrega al administrador y el detalle de los movimientos. Se genera en el computador con los datos del turno cerrado.
+
 ## Ejecutar en el computador
 
 Con [Node.js](https://nodejs.org/) 22.12 o posterior, abre la terminal de VS Code en la carpeta del proyecto y ejecuta:

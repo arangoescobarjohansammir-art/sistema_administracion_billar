@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { cashMovements, type CashMovementKind } from '../shared/cash.js';
 import { type createAccounts, ValidationError, whole } from './accounts.js';
 import { activeShiftId } from './cash-ledger.js';
+import { cashReportFilename, renderCashReport } from './cash-report.js';
 import { readJson, sendJson } from './http.js';
 
 type Accounts = ReturnType<typeof createAccounts>;
@@ -267,6 +268,23 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
 
   return async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     try {
+      const report = request.method === 'GET' ? /^\/api\/cash\/([1-9]\d*)\/report\.pdf$/.exec(path) : null;
+      if (report) {
+        const id = Number(report[1]);
+        if (!whole(id, 1, Number.MAX_SAFE_INTEGER)) throw new ValidationError(404, 'No se encontró el turno.');
+        const detail = describe(id);
+        if (detail.shift.closedAt === null) throw new ValidationError(409, 'Cierra el turno para descargar el informe.');
+        const filename = cashReportFilename(id, String(detail.shift.closedAt));
+        const pdf = await renderCashReport(database, detail);
+        response.writeHead(200, {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment; filename="' + filename + '"',
+          'Content-Length': pdf.length,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        return response.end(pdf);
+      }
       if (request.method === 'GET' && path === '/api/cash/purchase-references') {
         const id = activeShiftId(database);
         const purchases = id === null ? [] : database.prepare([
