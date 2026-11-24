@@ -127,6 +127,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
   }
 
   function redeem(owner: number | null, round: number | null, tokens: number, allowance: number, items: Items, payment: Payment) {
+    accounts.requireShift();
     if (owner !== null) accounts.accountById(owner);
     const products = items.map((item) => {
       const product = findProduct(database, item.productId);
@@ -179,6 +180,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     if (!benefit) throw new ValidationError(404, 'No se encontró ese derecho para el participante.');
     if (benefit.issuedAt !== null || benefit.redemptionId !== null) throw new ValidationError(409, 'El participante ya usó su derecho en ese chico.');
     if (choice === 'token') {
+      accounts.requireShift();
       database.prepare('UPDATE tejo_benefits SET issued_at = ? WHERE round_id = ? AND account_id = ?')
         .run(new Date().toISOString(), roundId, playerId);
       return roundId;

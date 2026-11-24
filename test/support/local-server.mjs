@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -56,6 +57,11 @@ export async function testServer() {
 
   return {
     start, stop, fetch: fetchLocal, json, databasePath,
+    openShift(openingBase = 100_000) {
+      return json('/api/cash', 201, 'POST', {
+        requestId: randomUUID(), cashier: 'Cajero de prueba', openingBase, note: '',
+      });
+    },
     async cleanup() {
       await stop();
       await rm(folder, { recursive: true, force: true });

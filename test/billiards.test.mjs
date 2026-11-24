@@ -11,9 +11,10 @@ test('conserva la mesa, reparte tiempo y consumos, y descuenta inventario solo a
   assert.equal(timeCharge(4800), 8000);
   assert.equal(timeCharge(2700), 4500);
   assert.equal(timeCharge(1), 2);
-  const { start, stop, json, cleanup, databasePath } = await testServer();
+  const { start, stop, json, cleanup, databasePath, openShift } = await testServer();
   t.after(cleanup);
   await start();
+  await openShift();
   const open = { table: 6, requestId: randomUUID() };
   const session = await json('/api/billiards', 201, 'POST', open);
   assert.equal((await json('/api/billiards', 200, 'POST', open)).id, session.id);

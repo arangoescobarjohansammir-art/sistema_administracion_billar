@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { api } from './Accounts';
 
 type Product = {
   id: number;
@@ -21,7 +22,9 @@ type Movement = {
   quantity: number;
   inputUnit: string;
   unitsPerInput: number;
+  cashMovementId: number | null;
 };
+type CashReference = { id: number; amount: number; category: string; reason: string };
 
 const currency = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
@@ -118,6 +121,8 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
   const [saveError, setSaveError] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [direction, setDirection] = useState('in');
+  const [purchases, setPurchases] = useState<CashReference[]>([]);
   const [unit, setUnit] = useState('unit');
   const [quantity, setQuantity] = useState('');
   const endpoint = '/' + product.id + '/movements';
@@ -125,7 +130,11 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
   async function load() {
     setLoadError('');
     try {
-      setHistory(await request<Movement[]>(endpoint));
+      const [entries, references] = await Promise.all([
+        request<Movement[]>(endpoint), api<CashReference[]>('cash/purchase-references'),
+      ]);
+      setHistory(entries);
+      setPurchases(references);
     } catch (error) {
       setLoadError(errorMessage(error));
     }
@@ -138,17 +147,20 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
     if (busy) return;
     const form = event.currentTarget;
     const data = new FormData(form);
+    const linkedExpense = data.get('cashMovementId');
     setBusy(true);
     setSaved(false);
     setSaveError('');
     try {
       const updated = await request<Product>(endpoint, 'POST', {
-        direction: data.get('direction'), quantity: Number(quantity), unit, reason: data.get('reason'),
+        direction, quantity: Number(quantity), unit, reason: data.get('reason'),
+        cashMovementId: linkedExpense ? Number(linkedExpense) : undefined,
       });
       onMovement(updated);
       form.reset();
       setQuantity('');
       setUnit('unit');
+      setDirection('in');
       setSaved(true);
       await load();
     } catch (error) {
@@ -168,7 +180,9 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
         <form onSubmit={save}>
           <h4>Registrar movimiento</h4>
           <fieldset disabled={busy} className="field-grid">
-            <label>Tipo<select name="direction"><option value="in">Entrada</option><option value="out">Salida manual</option></select></label>
+            <label>Tipo<select value={direction} onChange={(event) => setDirection(event.target.value)}>
+              <option value="in">Entrada</option><option value="out">Salida manual</option>
+            </select></label>
             <label>Unidad<select value={unit} onChange={(event) => setUnit(event.target.value)}>
               <option value="unit">Unidad de venta</option>
               {product.packageName && <option value="package">{product.packageName} ({product.unitsPerPackage} unidades)</option>}
@@ -176,6 +190,13 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
             <label>Cantidad<input type="number" min={1} max={1_000_000} step={1} required value={quantity}
               onChange={(event) => setQuantity(event.target.value)} /></label>
             <label>Motivo<input name="reason" required maxLength={240} placeholder="Ej. compra o producto dañado" /></label>
+            {direction === 'in' && purchases.length > 0 && <label className="wide">Gasto de caja relacionado (opcional)
+              <select name="cashMovementId"><option value="">Ninguno</option>
+                {purchases.map((purchase) => <option key={purchase.id} value={purchase.id}>
+                  #{purchase.id} · {purchase.category} · {currency.format(purchase.amount)} · {purchase.reason}
+                </option>)}
+              </select>
+            </label>}
           </fieldset>
           {unit === 'package' && Number(quantity) > 0 && <p>Equivale a {Number(quantity) * product.unitsPerPackage} unidades.</p>}
           {saveError && <p role="alert">{saveError}</p>}
@@ -192,6 +213,7 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
             <strong className={movement.units > 0 ? 'inbound' : 'outbound'}>{movement.units > 0 ? '+' : ''}{movement.units} unidades</strong>
             <span>{movement.reason}</span>
             {movement.inputUnit !== 'unidad' && <span>{movement.quantity} × {movement.inputUnit} de {movement.unitsPerInput} unidades</span>}
+            {movement.cashMovementId !== null && <span>Gasto de caja #{movement.cashMovementId}</span>}
             <time dateTime={movement.createdAt}>{date.format(new Date(movement.createdAt))}</time>
           </li>
         ))}</ul>}

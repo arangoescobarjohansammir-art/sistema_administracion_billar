@@ -8,6 +8,7 @@ import { createCatalog } from './catalog.js';
 import { createAccounts } from './accounts.js';
 import { createBilliards } from './billiards.js';
 import { createTejo } from './tejo.js';
+import { createCash } from './cash.js';
 import { readJson, sendJson } from './http.js';
 
 const host = '127.0.0.1';
@@ -30,6 +31,7 @@ const handleCatalog = createCatalog(database);
 const accounts = createAccounts(database);
 const handleBilliards = createBilliards(database, accounts);
 const handleTejo = createTejo(database, accounts);
+const handleCash = createCash(database, accounts);
 
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -61,6 +63,9 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
   if (path === '/api/tejo' || path.startsWith('/api/tejo/')) {
     return handleTejo(request, response, path);
+  }
+  if (path === '/api/cash' || path.startsWith('/api/cash/')) {
+    return handleCash(request, response, path);
   }
   if (path === '/api/local-note') {
     if (request.method === 'GET') {

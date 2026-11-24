@@ -4,6 +4,7 @@ import { Catalog } from './Catalog';
 import { Accounts } from './Accounts';
 import { Billiards } from './Billiards';
 import { Tejo } from './Tejo';
+import { Cash } from './Cash';
 import './style.css';
 
 type LocalNote = { text: string; updatedAt: string | null };
@@ -82,7 +83,7 @@ function LocalNoteForm() {
 }
 
 function App() {
-  const [section, setSection] = useState<'catalog' | 'accounts' | 'billiards' | 'tejo' | 'note'>('catalog');
+  const [section, setSection] = useState<'catalog' | 'accounts' | 'billiards' | 'tejo' | 'cash' | 'note'>('cash');
 
   return (
     <main>
@@ -90,6 +91,7 @@ function App() {
         <p>Caja local</p>
         <h1>Tejo y billar</h1>
         <nav className="actions" aria-label="Secciones de caja">
+          <button className="navigation" aria-pressed={section === 'cash'} onClick={() => setSection('cash')}>Caja</button>
           <button className="navigation" aria-pressed={section === 'catalog'} onClick={() => setSection('catalog')}>Inventario</button>
           <button className="navigation" aria-pressed={section === 'accounts'} onClick={() => setSection('accounts')}>Ventas y cuentas</button>
           <button className="navigation" aria-pressed={section === 'billiards'} onClick={() => setSection('billiards')}>Billar</button>
@@ -101,6 +103,7 @@ function App() {
       {section === 'accounts' && <Accounts />}
       {section === 'billiards' && <Billiards />}
       {section === 'tejo' && <Tejo />}
+      {section === 'cash' && <Cash />}
       {section === 'note' && <LocalNoteForm />}
     </main>
   );

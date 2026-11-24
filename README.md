@@ -10,6 +10,8 @@ En **Billar**, puedes abrir cualquiera de las seis mesas a $6.000 por hora, anot
 
 En **Tejo → Canchas y chicos**, selecciona una cancha de maxitejo o de tejo largo y abre un grupo con los nombres de los jugadores. Registra quién perdió cada chico y su pago, o deja el cargo fiado. Cada jugador puede recibir una ficha o consumir su valor en productos. El grupo conserva el contador y el historial de los chicos hasta que se libere la cancha. Para recibir fichas físicas a cambio de productos, usa **Tejo → Canjear fichas**.
 
+En **Caja**, abre el turno con el nombre del cajero y la base de efectivo contada. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, ingresa el conteo de ambos fondos, el total de transferencias verificadas y la base que dejas. El sistema muestra cuánto entregas al administrador y guarda el cuadre con el detalle del turno.
+
 ## Ejecutar en el computador
 
 Con [Node.js](https://nodejs.org/) 22.12 o posterior, abre la terminal de VS Code en la carpeta del proyecto y ejecuta:
@@ -24,9 +26,9 @@ Abre <http://127.0.0.1:4173>. La instalación inicial de dependencias requiere i
 
 Para probar el inventario, crea una cerveza con un empaque «Canasta» de 30 unidades. Registra una entrada de 2 canastas: las existencias deben subir a 60. Registra después una salida manual de 1 unidad con su motivo: deben quedar 59.
 
-Para probar el fiado, crea una cuenta en **Ventas y cuentas → Cuentas por nombre**. Luego abre **Registrar venta**, agrega cuatro cervezas de $4.000 y registra $6.000 en efectivo. Deben quedar $10.000 pendientes y salir cuatro unidades. Registra después un abono de $7.000 en efectivo y una ficha. El saldo queda en cero sin otra salida de inventario.
+Para probar el fiado, abre un turno en **Caja** y crea una cuenta en **Ventas y cuentas → Cuentas por nombre**. Luego abre **Registrar venta**, agrega cuatro cervezas de $4.000 y registra $6.000 en efectivo. Deben quedar $10.000 pendientes y salir cuatro unidades. Registra después un abono de $7.000 en efectivo y una ficha. El saldo queda en cero sin otra salida de inventario.
 
-Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, la liquidación de billar, los chicos de tejo, los canjes y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
+Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, las cuentas de billar y tejo, el cierre de caja y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
 
 La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo. Supabase se incorporará con el panel remoto.
 

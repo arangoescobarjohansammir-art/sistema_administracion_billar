@@ -133,6 +133,17 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: #a7e0bc;
 .tejo-benefits .actions { margin-top: 0.5rem; }
 .tejo-history details { padding: 0.75rem; border: 1px solid #405a4e; border-radius: 0.6rem; margin-bottom: 0.5rem; }
 .tejo-history summary { cursor: pointer; font-weight: 650; }
+.cash-layout { display: grid; gap: 1.25rem; }
+.cash-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: 0.65rem; }
+.cash-stats > div { background: #1a2b23; border: 1px solid #405a4e; border-radius: 0.65rem; padding: 0.65rem; }
+.cash-stats dt { color: #bed0c6; }
+.cash-stats dd { margin: 0.3rem 0 0; font-size: 1.1rem; font-weight: 700; overflow-wrap: anywhere; }
+.cash-reconciliation { overflow-x: auto; margin: 0.5rem 0 1rem; }
+.cash-reconciliation table { width: 100%; border-collapse: collapse; }
+.cash-reconciliation th, .cash-reconciliation td { border-bottom: 1px solid #405a4e; text-align: left; padding: 0.55rem; }
+.cash-reconciliation td { white-space: nowrap; }
+.cash-delivery { border-left: 3px solid #a7e0bc; padding: 0.35rem 0.85rem; }
+.cash-delivery h4, .cash-delivery p { margin: 0.35rem 0; }
 
 @media (max-width: 36rem) {
   main { margin-top: 1.25rem; }

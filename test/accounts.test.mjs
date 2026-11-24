@@ -6,9 +6,10 @@ import { testServer } from './support/local-server.mjs';
 const none = { cash: 0, transfer: 0, tokens: 0 };
 
 test('cobra y fía ventas sin duplicar inventario o abonos', { timeout: 20000 }, async (t) => {
-  const { start, stop, json, cleanup } = await testServer();
+  const { start, stop, json, cleanup, openShift } = await testServer();
   t.after(cleanup);
   await start();
+  await openShift();
 
   const form = {
     name: 'Cerveza de prueba', brand: '', presentation: 'Botella',

@@ -39,9 +39,11 @@
 ## Caja y cierre
 
 - La caja de ventas abre con una base de efectivo. Aumenta con cobros y otras entradas registradas y disminuye con gastos y retiros del mismo fondo.
+- Para registrar ventas, pagos y canjes se requiere un turno abierto. Los registros hechos en versiones anteriores conservan su historial y sus saldos. El primer turno empieza a acumular movimientos desde su apertura.
 - El fondo para compras se lleva aparte. Se entrega al cajero cuando hay una entrega programada y se conoce el importe. Se registran su entrega y sus pagos. Si queda efectivo, se devuelve al administrador.
 - Una compra imprevista puede pagarse con un retiro de la caja de ventas. Se registra el importe, la categoría y la explicación. Los movimientos entre fondos se registran como traslados internos.
 - Antes de entregar dinero, el cajero cuenta ambos fondos. El cierre compara lo esperado con lo contado y conserva la diferencia. El efectivo de ventas disponible se entrega al administrador y se deja registrada la base para el día siguiente.
+- Si hay diferencias entre el conteo y lo esperado, entre lo transferido y lo verificado, o entre la base dejada y la contada al abrir, el cajero debe registrar la explicación.
 - Las transferencias se comparan con los abonos recibidos. Las fichas y el fiado se reportan aparte del efectivo. El efectivo que se entrega al administrador se registra por separado de los gastos.
 - Los movimientos registran fecha y usuario. Las anulaciones, devoluciones y ajustes requieren motivo y conservan el historial.
 

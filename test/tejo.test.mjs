@@ -6,9 +6,10 @@ import { testServer } from './support/local-server.mjs';
 const noPayment = { cash: 0, transfer: 0, tokens: 0 };
 
 test('separa las canchas y registra cada chico y canje una sola vez', { timeout: 20000 }, async (t) => {
-  const { start, stop, json, cleanup } = await testServer();
+  const { start, stop, json, cleanup, openShift } = await testServer();
   t.after(cleanup);
   await start();
+  await openShift();
   const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
   const antonio = await json('/api/accounts', 201, 'POST', { name: 'Antonio' });
   const beatriz = await json('/api/accounts', 201, 'POST', { name: 'Beatriz' });
@@ -81,6 +82,11 @@ test('separa las canchas y registra cada chico y canje una sola vez', { timeout:
   overview = await json('/api/tejo', 200);
   assert.equal(overview.active.length, 0);
   assert.deepEqual(overview.tokenCounts, { issued: 6, redeemed: 3, receivedAsPayment: 3 });
+  const cash = (await json('/api/cash', 200)).active.totals;
+  assert.equal(cash.tokensIssued, 6);
+  assert.equal(cash.tokensRedeemed, 3);
+  assert.equal(cash.tokensReceived, 3);
+  assert.equal(cash.tokenAmount, 9000);
   assert.deepEqual(overview.physicalRedemptions.map(({ subtotal, extra }) => [subtotal, extra]), [[6000, 2000], [4000, 0], [3000, 0]]);
   const closedLargo = overview.recent.find(({ id }) => id === largo.id);
   assert.equal(closedLargo.rounds[0].benefits.find((item) => item.accountId === antonio.id).redemption.extra, 2000);

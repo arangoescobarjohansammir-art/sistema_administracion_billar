@@ -1,0 +1,244 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { DatabaseSync } from 'node:sqlite';
+import { cashMovements, type CashMovementKind } from '../shared/cash.js';
+import { type createAccounts, ValidationError, whole } from './accounts.js';
+import { activeShiftId } from './cash-ledger.js';
+import { readJson, sendJson } from './http.js';
+
+type Accounts = ReturnType<typeof createAccounts>;
+const maxCash = 1_000_000_000;
+const readText = (value: unknown, max: number) =>
+  typeof value === 'string' && value.trim().length <= max ? value.trim() : null;
+
+export function createCash(database: DatabaseSync, accounts: Accounts) {
+  database.exec([
+    'CREATE TABLE IF NOT EXISTS cash_shifts (',
+    '  id INTEGER PRIMARY KEY, cashier TEXT NOT NULL, opened_at TEXT NOT NULL,',
+    '  opening_base INTEGER NOT NULL CHECK (opening_base >= 0), previous_base INTEGER, opening_note TEXT NOT NULL,',
+    '  closed_at TEXT, sales_counted INTEGER, purchases_counted INTEGER, transfer_confirmed INTEGER,',
+    '  next_base INTEGER, closing_note TEXT, sales_expected INTEGER, purchases_expected INTEGER,',
+    '  transfer_expected INTEGER, pending_balance INTEGER',
+    ') STRICT;',
+    'CREATE UNIQUE INDEX IF NOT EXISTS cash_single_open_shift ON cash_shifts((1)) WHERE closed_at IS NULL;',
+    'CREATE TABLE IF NOT EXISTS cash_movements (',
+    '  id INTEGER PRIMARY KEY, shift_id INTEGER NOT NULL REFERENCES cash_shifts(id), kind TEXT NOT NULL,',
+    '  amount INTEGER NOT NULL CHECK (amount > 0), sales_delta INTEGER NOT NULL, purchases_delta INTEGER NOT NULL,',
+    '  category TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL',
+    ') STRICT;',
+    'CREATE INDEX IF NOT EXISTS cash_movements_by_shift ON cash_movements(shift_id, id);',
+    'CREATE TABLE IF NOT EXISTS cash_inventory_links (',
+    '  inventory_movement_id INTEGER PRIMARY KEY REFERENCES inventory_movements(id),',
+    '  cash_movement_id INTEGER NOT NULL REFERENCES cash_movements(id)',
+    ') STRICT;',
+    'CREATE INDEX IF NOT EXISTS cash_inventory_by_expense ON cash_inventory_links(cash_movement_id);',
+    'CREATE TABLE IF NOT EXISTS cash_shift_sales (sale_id INTEGER PRIMARY KEY REFERENCES sales(id), shift_id INTEGER NOT NULL REFERENCES cash_shifts(id)) STRICT;',
+    'CREATE TABLE IF NOT EXISTS cash_shift_payments (payment_id INTEGER PRIMARY KEY REFERENCES account_payments(id), shift_id INTEGER NOT NULL REFERENCES cash_shifts(id)) STRICT;',
+    'CREATE TABLE IF NOT EXISTS cash_shift_redemptions (redemption_id INTEGER PRIMARY KEY REFERENCES tejo_redemptions(id), shift_id INTEGER NOT NULL REFERENCES cash_shifts(id)) STRICT;',
+    'CREATE TABLE IF NOT EXISTS cash_shift_tokens (',
+    '  round_id INTEGER NOT NULL, account_id INTEGER NOT NULL, shift_id INTEGER NOT NULL REFERENCES cash_shifts(id),',
+    '  PRIMARY KEY (round_id, account_id), FOREIGN KEY (round_id, account_id) REFERENCES tejo_benefits(round_id, account_id)',
+    ') STRICT;',
+    'CREATE INDEX IF NOT EXISTS cash_sales_by_shift ON cash_shift_sales(shift_id, sale_id);',
+    'CREATE INDEX IF NOT EXISTS cash_payments_by_shift ON cash_shift_payments(shift_id, payment_id);',
+    'CREATE INDEX IF NOT EXISTS cash_redemptions_by_shift ON cash_shift_redemptions(shift_id, redemption_id);',
+    'CREATE INDEX IF NOT EXISTS cash_tokens_by_shift ON cash_shift_tokens(shift_id);',
+    'CREATE TRIGGER IF NOT EXISTS cash_track_sale AFTER INSERT ON sales BEGIN',
+    '  INSERT INTO cash_shift_sales SELECT NEW.id, id FROM cash_shifts WHERE closed_at IS NULL;',
+    'END;',
+    'CREATE TRIGGER IF NOT EXISTS cash_track_payment AFTER INSERT ON account_payments BEGIN',
+    '  INSERT INTO cash_shift_payments SELECT NEW.id, id FROM cash_shifts WHERE closed_at IS NULL;',
+    'END;',
+    'CREATE TRIGGER IF NOT EXISTS cash_track_redemption AFTER INSERT ON tejo_redemptions BEGIN',
+    '  INSERT INTO cash_shift_redemptions SELECT NEW.id, id FROM cash_shifts WHERE closed_at IS NULL;',
+    'END;',
+    'CREATE TRIGGER IF NOT EXISTS cash_track_issued_token_insert AFTER INSERT ON tejo_benefits WHEN NEW.issued_at IS NOT NULL BEGIN',
+    '  INSERT INTO cash_shift_tokens SELECT NEW.round_id, NEW.account_id, id FROM cash_shifts WHERE closed_at IS NULL;',
+    'END;',
+    'CREATE TRIGGER IF NOT EXISTS cash_track_issued_token_update AFTER UPDATE OF issued_at ON tejo_benefits',
+    'WHEN NEW.issued_at IS NOT NULL AND OLD.issued_at IS NULL BEGIN',
+    '  INSERT INTO cash_shift_tokens SELECT NEW.round_id, NEW.account_id, id FROM cash_shifts WHERE closed_at IS NULL;',
+    'END;',
+  ].join('\n'));
+
+  const shiftSelect = [
+    'SELECT id, cashier, opened_at AS openedAt, opening_base AS openingBase, previous_base AS previousBase,',
+    'opening_note AS openingNote, closed_at AS closedAt, sales_counted AS salesCounted,',
+    'purchases_counted AS purchasesCounted, transfer_confirmed AS transferConfirmed, next_base AS nextBase,',
+    'closing_note AS closingNote, sales_expected AS salesExpected, purchases_expected AS purchasesExpected,',
+    'transfer_expected AS transferExpected, pending_balance AS pendingBalance FROM cash_shifts',
+  ].join(' ');
+
+  function mostRecentBase() {
+    const row = database.prepare('SELECT next_base AS amount FROM cash_shifts WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 1').get();
+    return row ? Number(row.amount) : null;
+  }
+
+  function shiftById(id: number) {
+    const shift = database.prepare(shiftSelect + ' WHERE id = ?').get(id);
+    if (!shift) throw new ValidationError(404, 'No se encontró el turno.');
+    return shift;
+  }
+
+  function openShift(input: Record<string, unknown>) {
+    const { openingBase } = input;
+    const cashier = readText(input.cashier, 100);
+    const note = readText(input.note, 300);
+    if (!cashier || !whole(openingBase, 0, maxCash) || note === null) {
+      throw new ValidationError(400, 'Escribe el nombre del cajero y la base de efectivo contada.');
+    }
+    if (activeShiftId(database) !== null) throw new ValidationError(409, 'Ya hay un turno de caja abierto.');
+    const previousBase = mostRecentBase();
+    if (previousBase !== null && previousBase !== openingBase && !note) {
+      throw new ValidationError(400, 'Explica la diferencia con la base que dejó el turno anterior.');
+    }
+    return Number(database.prepare(
+      'INSERT INTO cash_shifts (cashier, opened_at, opening_base, previous_base, opening_note) VALUES (?, ?, ?, ?, ?)',
+    ).run(cashier, new Date().toISOString(), openingBase, previousBase, note).lastInsertRowid);
+  }
+
+  function summarize(shift: ReturnType<typeof shiftById>) {
+    const id = Number(shift.id);
+    const sale = database.prepare([
+      'SELECT COUNT(*) AS count, COALESCE(SUM(sales.total), 0) AS total',
+      'FROM cash_shift_sales JOIN sales ON sales.id = sale_id WHERE shift_id = ?',
+    ].join(' ')).get(id);
+    const payment = database.prepare([
+      'SELECT COALESCE(SUM(cash), 0) AS cash, COALESCE(SUM(transfer), 0) AS transfer,',
+      'COALESCE(SUM(tokens), 0) AS tokens, COALESCE(SUM(tokens * token_value), 0) AS tokenAmount,',
+      'COALESCE(SUM(CASE WHEN account_payments.sale_id IS NULL THEN cash + transfer + tokens * token_value ELSE 0 END), 0) AS accountCollections',
+      'FROM cash_shift_payments JOIN account_payments ON account_payments.id = payment_id WHERE shift_id = ?',
+    ].join(' ')).get(id);
+    const movement = database.prepare([
+      'SELECT COALESCE(SUM(sales_delta), 0) AS sales, COALESCE(SUM(purchases_delta), 0) AS purchases',
+      'FROM cash_movements WHERE shift_id = ?',
+    ].join(' ')).get(id);
+    const salesExpected = shift.salesExpected ?? (Number(shift.openingBase) + Number(payment?.cash) + Number(movement?.sales));
+    const purchasesExpected = shift.purchasesExpected ?? Number(movement?.purchases);
+    const transferExpected = shift.transferExpected ?? Number(payment?.transfer);
+    const pending = shift.pendingBalance ?? database.prepare([
+      'SELECT (SELECT COALESCE(SUM(total), 0) FROM sales WHERE account_id IS NOT NULL) -',
+      '(SELECT COALESCE(SUM(cash + transfer + tokens * token_value), 0) FROM account_payments WHERE account_id IS NOT NULL) AS total',
+    ].join(' ')).get()?.total;
+    const issued = database.prepare('SELECT COUNT(*) AS value FROM cash_shift_tokens WHERE shift_id = ?').get(id);
+    const redeemed = database.prepare([
+      'SELECT COALESCE(SUM(tokens), 0) AS value FROM cash_shift_redemptions',
+      'JOIN tejo_redemptions ON tejo_redemptions.id = redemption_id WHERE shift_id = ?',
+    ].join(' ')).get(id);
+    return {
+      salesCount: Number(sale?.count), salesTotal: Number(sale?.total),
+      cashReceived: Number(payment?.cash), transferExpected: Number(transferExpected),
+      tokensReceived: Number(payment?.tokens), tokenAmount: Number(payment?.tokenAmount),
+      accountCollections: Number(payment?.accountCollections), pendingBalance: Number(pending),
+      tokensIssued: Number(issued?.value), tokensRedeemed: Number(redeemed?.value),
+      salesExpected: Number(salesExpected), purchasesExpected: Number(purchasesExpected),
+      salesDifference: shift.salesCounted === null ? null : Number(shift.salesCounted) - Number(salesExpected),
+      purchasesDifference: shift.purchasesCounted === null ? null : Number(shift.purchasesCounted) - Number(purchasesExpected),
+      transferDifference: shift.transferConfirmed === null ? null : Number(shift.transferConfirmed) - Number(transferExpected),
+      salesDelivery: shift.salesCounted === null ? null : Number(shift.salesCounted) - Number(shift.nextBase),
+      purchasesDelivery: shift.purchasesCounted === null ? null : Number(shift.purchasesCounted),
+    };
+  }
+
+  function openById(id: number) {
+    const shift = shiftById(id);
+    if (shift.closedAt !== null) throw new ValidationError(409, 'El turno ya está cerrado.');
+    return shift;
+  }
+
+  function recordMovement(id: number, input: Record<string, unknown>) {
+    const shift = openById(id);
+    const { kind, amount } = input;
+    const category = readText(input.category, 80);
+    const reason = readText(input.reason, 300);
+    if (typeof kind !== 'string' || !Object.hasOwn(cashMovements, kind) ||
+      !whole(amount, 1, maxCash) || !category || !reason) {
+      throw new ValidationError(400, 'Indica el movimiento, su importe, la categoría y el motivo.');
+    }
+    const movement = cashMovements[kind as CashMovementKind];
+    const totals = summarize(shift);
+    if (totals.salesExpected + movement.sales * amount < 0 || totals.purchasesExpected + movement.purchases * amount < 0) {
+      throw new ValidationError(409, 'El fondo de origen no tiene efectivo suficiente para ese movimiento.');
+    }
+    return Number(database.prepare([
+      'INSERT INTO cash_movements (shift_id, kind, amount, sales_delta, purchases_delta, category, reason, created_at)',
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    ].join(' ')).run(id, kind, amount, movement.sales * amount, movement.purchases * amount, category, reason, new Date().toISOString()).lastInsertRowid);
+  }
+
+  function closeShift(id: number, input: Record<string, unknown>) {
+    const shift = openById(id);
+    const { salesCounted, purchasesCounted, transferConfirmed, nextBase } = input;
+    const note = readText(input.note, 300);
+    if (!whole(salesCounted, 0, maxCash) || !whole(purchasesCounted, 0, maxCash) ||
+      !whole(transferConfirmed, 0, maxCash) || !whole(nextBase, 0, maxCash) || note === null) {
+      throw new ValidationError(400, 'Registra el efectivo contado, las transferencias verificadas y la base del próximo turno.');
+    }
+    if (nextBase > salesCounted) throw new ValidationError(400, 'La base siguiente no puede superar el efectivo contado en ventas.');
+    const totals = summarize(shift);
+    if (!note && (salesCounted !== totals.salesExpected || purchasesCounted !== totals.purchasesExpected || transferConfirmed !== totals.transferExpected)) {
+      throw new ValidationError(400, 'Explica las diferencias antes de cerrar el turno.');
+    }
+    database.prepare([
+      'UPDATE cash_shifts SET closed_at = ?, sales_counted = ?, purchases_counted = ?, transfer_confirmed = ?,',
+      'next_base = ?, closing_note = ?, sales_expected = ?, purchases_expected = ?, transfer_expected = ?, pending_balance = ? WHERE id = ?',
+    ].join(' ')).run(new Date().toISOString(), salesCounted, purchasesCounted, transferConfirmed, nextBase, note,
+      totals.salesExpected, totals.purchasesExpected, totals.transferExpected, totals.pendingBalance, id);
+    return id;
+  }
+
+  function describe(id: number) {
+    const shift = shiftById(id);
+    const movements = database.prepare([
+      'SELECT id, kind, amount, category, reason, created_at AS createdAt, sales_delta AS salesDelta, purchases_delta AS purchasesDelta,',
+      '(SELECT COUNT(*) FROM cash_inventory_links WHERE cash_movement_id = cash_movements.id) AS inventoryLinks',
+      'FROM cash_movements WHERE shift_id = ? ORDER BY id DESC',
+    ].join(' ')).all(id);
+    const payments = database.prepare([
+      'SELECT account_payments.id, sale_id AS saleId, a.name, cash, transfer, tokens, token_value AS tokenValue,',
+      'account_payments.created_at AS createdAt',
+      'FROM cash_shift_payments JOIN account_payments ON account_payments.id = payment_id',
+      'LEFT JOIN customer_accounts a ON a.id = account_payments.account_id WHERE shift_id = ? ORDER BY payment_id DESC',
+    ].join(' ')).all(id);
+    return { shift, totals: summarize(shift), movements, payments };
+  }
+
+  return async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
+    try {
+      if (request.method === 'GET' && path === '/api/cash/purchase-references') {
+        const id = activeShiftId(database);
+        const purchases = id === null ? [] : database.prepare([
+          "SELECT id, amount, category, reason FROM cash_movements WHERE shift_id = ? AND kind IN ('sales_expense', 'purchase_expense')",
+          'ORDER BY id DESC LIMIT 100',
+        ].join(' ')).all(id);
+        return sendJson(response, 200, purchases);
+      }
+      if (request.method === 'GET' && path === '/api/cash') {
+        const id = activeShiftId(database);
+        const recent = database.prepare(shiftSelect + ' WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 30').all();
+        return sendJson(response, 200, { active: id === null ? null : describe(id), previousBase: mostRecentBase(), recent });
+      }
+      if (request.method === 'GET') {
+        const match = /^\/api\/cash\/([1-9]\d*)$/.exec(path);
+        if (!match || !whole(Number(match[1]), 1, Number.MAX_SAFE_INTEGER)) throw new ValidationError(404, 'Ruta de caja no encontrada.');
+        return sendJson(response, 200, describe(Number(match[1])));
+      }
+      if (request.method !== 'POST') throw new ValidationError(405, 'Método no permitido.');
+      const input = await readJson(request);
+      if (!input) throw new ValidationError(400, 'No se recibió una operación válida.');
+      const { requestId, ...fields } = input;
+      let action: () => number;
+      if (path === '/api/cash') action = () => openShift(fields);
+      else {
+        const match = /^\/api\/cash\/([1-9]\d*)\/(movements|close)$/.exec(path);
+        if (!match || !whole(Number(match[1]), 1, Number.MAX_SAFE_INTEGER)) throw new ValidationError(404, 'Ruta de caja no encontrada.');
+        const id = Number(match[1]);
+        action = match[2] === 'close' ? () => closeShift(id, fields) : () => recordMovement(id, fields);
+      }
+      const result = accounts.writeOnce(requestId, JSON.stringify([path, fields]), action);
+      return sendJson(response, result.repeated ? 200 : 201, result);
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+      return sendJson(response, error.status, { error: error.message });
+    }
+  };
+}

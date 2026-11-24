@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
+import { activeShiftId } from './cash-ledger.js';
 
 const tokenValue = 3000;
 const maxMoney = 1_000_000_000;
@@ -117,13 +118,19 @@ export function createAccounts(database: DatabaseSync) {
     }
   }
 
+  function requireShift() {
+    if (activeShiftId(database) === null) throw new ValidationError(409, 'Abre un turno en Caja antes de registrar esta operación.');
+  }
+
   function insertPayment(accountId: number | null, saleId: number | null, payment: Payment, createdAt: string) {
+    requireShift();
     return Number(database.prepare(
       'INSERT INTO account_payments (account_id, sale_id, cash, transfer, tokens, token_value, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ).run(accountId, saleId, payment.cash, payment.transfer, payment.tokens, tokenValue, createdAt).lastInsertRowid);
   }
 
   function insertSale(accountId: number | null, total: number, createdAt: string) {
+    requireShift();
     return Number(database.prepare('INSERT INTO sales (account_id, total, created_at) VALUES (?, ?, ?)')
       .run(accountId, total, createdAt).lastInsertRowid);
   }
@@ -241,5 +248,5 @@ export function createAccounts(database: DatabaseSync) {
       return sendJson(response, error.status, { error: error.message });
     }
   }
-  return { handle, accountById, writeOnce, insertSale, insertPayment, insertAllocatedLine };
+  return { handle, accountById, writeOnce, insertSale, insertPayment, insertAllocatedLine, requireShift };
 }

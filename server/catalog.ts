@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { readJson, sendJson } from './http.js';
 import { findProduct, productSelect, recordInventoryMovement } from './inventory.js';
+import { activeShiftId } from './cash-ledger.js';
 
 const photoLimit = 2 * 1024 * 1024;
 const nameLimit = 100;
@@ -87,16 +88,24 @@ export function createCatalog(database: DatabaseSync) {
   async function addMovement(request: IncomingMessage, response: ServerResponse, id: number) {
     const input = await readJson(request);
     const reason = stringField(input?.reason, 240);
-    const { quantity, direction, unit } = input ?? {};
+    const { quantity, direction, unit, cashMovementId } = input ?? {};
     if (!reason || !integerField(quantity, 1, quantityLimit) ||
       (direction !== 'in' && direction !== 'out') || (unit !== 'unit' && unit !== 'package')) {
       return sendJson(response, 400, { error: 'Indica un motivo y una cantidad entera mayor que cero.' });
+    }
+    if (cashMovementId !== undefined && (direction !== 'in' || !integerField(cashMovementId, 1, Number.MAX_SAFE_INTEGER))) {
+      return sendJson(response, 400, { error: 'Solo las entradas pueden vincularse a un gasto de caja.' });
     }
 
     database.exec('BEGIN IMMEDIATE');
     let committed = false;
     try {
       const product = findProduct(database, id);
+      if (cashMovementId !== undefined && !database.prepare([
+        "SELECT id FROM cash_movements WHERE id = ? AND shift_id = ? AND kind IN ('sales_expense', 'purchase_expense')",
+      ].join(' ')).get(Number(cashMovementId), activeShiftId(database))) {
+        return sendJson(response, 409, { error: 'El gasto debe pertenecer al turno de caja abierto.' });
+      }
       if (!product) return sendJson(response, 404, { error: 'Producto no encontrado.' });
       if (!product.active) return sendJson(response, 409, { error: 'Reactiva el producto antes de mover sus existencias.' });
       if (unit === 'package' && !product.packageName) {
@@ -108,10 +117,14 @@ export function createCatalog(database: DatabaseSync) {
       if (newStock < 0 || newStock > quantityLimit) {
         return sendJson(response, 409, { error: newStock < 0 ? 'No hay suficientes unidades.' : 'Se excede el límite de existencias.' });
       }
-      recordInventoryMovement(database, {
+      const movementId = recordInventoryMovement(database, {
         productId: id, units, reason, createdAt: new Date().toISOString(), quantity, unitsPerInput,
         inputUnit: unit === 'package' ? String(product.packageName) : 'unidad',
       });
+      if (cashMovementId !== undefined) {
+        database.prepare('INSERT INTO cash_inventory_links (inventory_movement_id, cash_movement_id) VALUES (?, ?)')
+          .run(movementId, Number(cashMovementId));
+      }
       const updated = findProduct(database, id);
       database.exec('COMMIT');
       committed = true;
@@ -136,8 +149,9 @@ export function createCatalog(database: DatabaseSync) {
     if (action === 'movements' && request.method === 'GET') {
       if (!findProduct(database, id)) return sendJson(response, 404, { error: 'Producto no encontrado.' });
       const rows = database.prepare(
-        'SELECT id, units, reason, created_at AS createdAt, quantity, input_unit AS inputUnit, units_per_input AS unitsPerInput ' +
-        'FROM inventory_movements WHERE product_id = ? ORDER BY id DESC',
+        'SELECT id, units, reason, created_at AS createdAt, quantity, input_unit AS inputUnit, units_per_input AS unitsPerInput, ' +
+        'cash_movement_id AS cashMovementId FROM inventory_movements ' +
+        'LEFT JOIN cash_inventory_links ON inventory_movement_id = inventory_movements.id WHERE product_id = ? ORDER BY id DESC',
       ).all(id);
       return sendJson(response, 200, rows);
     }
