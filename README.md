@@ -4,7 +4,21 @@ Proyecto de portafolio para administrar un establecimiento con seis mesas de bil
 
 ## Estado
 
-Primer hito: reglas del negocio y casos de aceptación. Las pantallas y la base de datos se implementarán en los siguientes hitos.
+La aplicación local ya permite guardar y recuperar una nota de caja. Este primer recorrido comprueba que la interfaz y SQLite funcionan en el computador antes de incorporar productos y cobros.
+
+## Ejecutar en el computador
+
+Con [Node.js](https://nodejs.org/) 22.12 o posterior, abre la terminal de VS Code en la carpeta del proyecto y ejecuta:
+
+```sh
+npm ci
+npm run build
+npm start
+```
+
+Abre <http://127.0.0.1:4173>. La instalación inicial de dependencias requiere internet. Una vez compilada, la aplicación usa archivos y datos locales y se inicia con `npm start`.
+
+Para comprobar la persistencia, guarda una nota de ejemplo, detén el servidor con Ctrl+C y vuelve a iniciarlo. La nota debe aparecer al recargar la página. La base se crea en `data/caja.sqlite`. Supabase se incorporará con el panel remoto.
 
 ## Arquitectura propuesta
 
