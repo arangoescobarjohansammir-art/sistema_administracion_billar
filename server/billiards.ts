@@ -163,15 +163,14 @@ export function createBilliards(database: DatabaseSync, accounts: Accounts) {
     const closedAt = Math.max(Date.now(), Number(session.stoppedAt));
     const createdAt = new Date(closedAt).toISOString();
     const heading = 'Billar · mesa ' + session.tableNumber;
-    const insertLine = database.prepare('INSERT INTO sale_allocated_lines (sale_id, label, amount) VALUES (?, ?, ?)');
     const linkSale = database.prepare('INSERT INTO billiard_shares (session_id, sale_id) VALUES (?, ?)');
     for (const participant of participants) {
       const total = participant.time + participant.items.reduce((sum, item) => sum + item.amount, 0);
       const saleId = accounts.insertSale(participant.accountId, total, createdAt);
       linkSale.run(id, saleId);
-      if (participant.time) insertLine.run(saleId, heading + ' · tiempo ' + durationLabel(details.seconds), participant.time);
+      if (participant.time) accounts.insertAllocatedLine(saleId, heading + ' · tiempo ' + durationLabel(details.seconds), participant.time);
       for (const item of participant.items) {
-        insertLine.run(saleId, heading + ' · ' + productLines.get(item.id)!.label, item.amount);
+        accounts.insertAllocatedLine(saleId, heading + ' · ' + productLines.get(item.id)!.label, item.amount);
       }
       if (paymentTotal(participant.payment) > 0) accounts.insertPayment(participant.accountId, saleId, participant.payment, createdAt);
     }

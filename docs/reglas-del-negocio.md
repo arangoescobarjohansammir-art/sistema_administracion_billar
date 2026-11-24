@@ -15,10 +15,13 @@
 
 ## Tejo y fichas
 
+- Hay seis canchas de maxitejo y seis de tejo largo. Cada cancha lleva su propio grupo y contador de chicos. El historial conserva el grupo, la cancha, el número de chico y quién perdió.
+
 - El tejo se cobra por chico. Quien pierde paga $4.000 por participante. Cada participante, incluido quien pierde, tiene derecho a una ficha o a consumir hasta $4.000 en productos por cada chico.
 - El jugador puede combinar productos en un mismo canje. Si los productos cuestan más de $4.000, el jugador cubre el excedente. Si cuestan menos y se cierra el canje, la diferencia se pierde.
 - Una ficha ya entregada puede canjearse por hasta $4.000 en productos o aplicarse como $3.000 al pago de una cuenta. El canje por productos no da cambio ni deja saldo en la ficha.
 - Se registran por separado el cargo al perdedor, la elección de cada jugador, las fichas entregadas y las fichas recibidas por canje o pago. Un mismo derecho de un chico se usa una sola vez.
+- Un derecho puede quedar pendiente hasta registrar la entrega de la ficha o los productos. Para liberar la cancha hay que registrar cómo se usaron los derechos pendientes. El saldo de dinero puede seguir fiado en las cuentas por nombre.
 
 ## Cuentas por nombre y cobros
 
@@ -59,5 +62,4 @@
 ## Detalles por confirmar al implementar
 
 - Confirmar la regla de redondeo que usa la versión actual de billar. Se cobra por segundos completos y se redondea el importe al peso más cercano. Si al repartir por igual queda algún peso de una línea, se asigna en el orden en que aparecen las personas.
-- Cuántas canchas de tejo se necesitan en la interfaz y qué nombres usarán.
 - Quién puede autorizar anulaciones o ajustes y qué comprobante de transferencia se registrará, si se necesita alguno.

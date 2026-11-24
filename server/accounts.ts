@@ -28,7 +28,7 @@ export function paymentTotal(payment: Payment) {
   return payment.cash + payment.transfer + payment.tokens * tokenValue;
 }
 
-function saleItems(value: unknown): SaleItem[] | null {
+export function saleItems(value: unknown): SaleItem[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > 50) return null;
   const products = new Set<number>();
   const items: SaleItem[] = [];
@@ -126,6 +126,10 @@ export function createAccounts(database: DatabaseSync) {
   function insertSale(accountId: number | null, total: number, createdAt: string) {
     return Number(database.prepare('INSERT INTO sales (account_id, total, created_at) VALUES (?, ?, ?)')
       .run(accountId, total, createdAt).lastInsertRowid);
+  }
+
+  function insertAllocatedLine(saleId: number, label: string, amount: number) {
+    database.prepare('INSERT INTO sale_allocated_lines (sale_id, label, amount) VALUES (?, ?, ?)').run(saleId, label, amount);
   }
 
   async function registerSale(request: IncomingMessage, response: ServerResponse) {
@@ -237,5 +241,5 @@ export function createAccounts(database: DatabaseSync) {
       return sendJson(response, error.status, { error: error.message });
     }
   }
-  return { handle, accountById, writeOnce, insertSale, insertPayment };
+  return { handle, accountById, writeOnce, insertSale, insertPayment, insertAllocatedLine };
 }

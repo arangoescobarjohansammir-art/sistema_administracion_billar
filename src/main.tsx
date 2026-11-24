@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Catalog } from './Catalog';
 import { Accounts } from './Accounts';
 import { Billiards } from './Billiards';
+import { Tejo } from './Tejo';
 import './style.css';
 
 type LocalNote = { text: string; updatedAt: string | null };
@@ -81,7 +82,7 @@ function LocalNoteForm() {
 }
 
 function App() {
-  const [section, setSection] = useState<'catalog' | 'accounts' | 'billiards' | 'note'>('catalog');
+  const [section, setSection] = useState<'catalog' | 'accounts' | 'billiards' | 'tejo' | 'note'>('catalog');
 
   return (
     <main>
@@ -92,12 +93,14 @@ function App() {
           <button className="navigation" aria-pressed={section === 'catalog'} onClick={() => setSection('catalog')}>Inventario</button>
           <button className="navigation" aria-pressed={section === 'accounts'} onClick={() => setSection('accounts')}>Ventas y cuentas</button>
           <button className="navigation" aria-pressed={section === 'billiards'} onClick={() => setSection('billiards')}>Billar</button>
+          <button className="navigation" aria-pressed={section === 'tejo'} onClick={() => setSection('tejo')}>Tejo</button>
           <button className="navigation" aria-pressed={section === 'note'} onClick={() => setSection('note')}>Nota de caja</button>
         </nav>
       </header>
       {section === 'catalog' && <Catalog />}
       {section === 'accounts' && <Accounts />}
       {section === 'billiards' && <Billiards />}
+      {section === 'tejo' && <Tejo />}
       {section === 'note' && <LocalNoteForm />}
     </main>
   );

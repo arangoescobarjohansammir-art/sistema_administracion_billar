@@ -124,6 +124,15 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: #a7e0bc;
 .bill-part { border: 1px solid #506c5e; border-radius: 0.6rem; padding: 0.8rem; margin: 1rem 0; min-width: 0; }
 .bill-part legend { font-weight: 700; padding-inline: 0.35rem; }
 .billiard-panel form .section-title { margin-bottom: 0.85rem; }
+.tejo-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 0.75rem; align-items: start; }
+.tejo-forms .product-picker { margin-top: 0.85rem; }
+.tejo-forms fieldset > label { margin-top: 0.85rem; }
+.tejo-benefits { padding: 0; list-style: none; }
+.tejo-benefits > li { padding-block: 0.75rem; border-top: 1px solid #405a4e; }
+.tejo-benefits > li:first-child { margin-top: 0.75rem; }
+.tejo-benefits .actions { margin-top: 0.5rem; }
+.tejo-history details { padding: 0.75rem; border: 1px solid #405a4e; border-radius: 0.6rem; margin-bottom: 0.5rem; }
+.tejo-history summary { cursor: pointer; font-weight: 650; }
 
 @media (max-width: 36rem) {
   main { margin-top: 1.25rem; }

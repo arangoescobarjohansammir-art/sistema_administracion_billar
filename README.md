@@ -1,12 +1,14 @@
 # Caja para tejo y billar
 
-Proyecto de portafolio para administrar un establecimiento con seis mesas de billar, tejo y venta de productos. Un cajero registra las operaciones en el computador del negocio. El administrador tendrá un panel de consulta desde el celular.
+Proyecto de portafolio para administrar un establecimiento con seis mesas de billar, seis canchas de maxitejo, seis de tejo largo y venta de productos. Un cajero registra las operaciones en el computador del negocio. El administrador tendrá un panel de consulta desde el celular.
 
 ## Estado
 
 La aplicación local permite administrar el inventario, registrar ventas de productos y manejar cuentas por nombre. El cajero puede cobrar de inmediato, dejar un saldo fiado o registrar un abono con efectivo, transferencia y fichas.
 
 En **Billar**, puedes abrir cualquiera de las seis mesas a $6.000 por hora, anotar los productos que se entreguen y detener el tiempo cuando termine el juego. Reparte el tiempo y cada consumo por igual o con importes distintos, y cobra o fía la parte de cada persona antes de liberar la mesa.
+
+En **Tejo → Canchas y chicos**, selecciona una cancha de maxitejo o de tejo largo y abre un grupo con los nombres de los jugadores. Registra quién perdió cada chico y su pago, o deja el cargo fiado. Cada jugador puede recibir una ficha o consumir su valor en productos. El grupo conserva el contador y el historial de los chicos hasta que se libere la cancha. Para recibir fichas físicas a cambio de productos, usa **Tejo → Canjear fichas**.
 
 ## Ejecutar en el computador
 
@@ -24,7 +26,7 @@ Para probar el inventario, crea una cerveza con un empaque «Canasta» de 30 uni
 
 Para probar el fiado, crea una cuenta en **Ventas y cuentas → Cuentas por nombre**. Luego abre **Registrar venta**, agrega cuatro cervezas de $4.000 y registra $6.000 en efectivo. Deben quedar $10.000 pendientes y salir cuatro unidades. Registra después un abono de $7.000 en efectivo y una ficha. El saldo queda en cero sin otra salida de inventario.
 
-Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, la liquidación de billar y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
+Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, la liquidación de billar, los chicos de tejo, los canjes y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
 
 La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo. Supabase se incorporará con el panel remoto.
 
