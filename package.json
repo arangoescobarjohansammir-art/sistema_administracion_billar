@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc --noEmit && vite build --outDir dist/client && tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
-    "test": "npm run build && node --test test/catalog.test.mjs"
+    "test": "npm run build && node --test test/catalog.test.mjs test/accounts.test.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",

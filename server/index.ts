@@ -5,6 +5,7 @@ import { dirname, extname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { createCatalog } from './catalog.js';
+import { createAccounts } from './accounts.js';
 import { readJson, sendJson } from './http.js';
 
 const host = '127.0.0.1';
@@ -24,6 +25,7 @@ database.exec(`
 `);
 
 const handleCatalog = createCatalog(database);
+const handleAccounts = createAccounts(database);
 
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -46,6 +48,9 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
   if (path === '/api/products' || path.startsWith('/api/products/')) {
     return handleCatalog(request, response, path);
+  }
+  if (path === '/api/sales' || path === '/api/accounts' || path.startsWith('/api/accounts/')) {
+    return handleAccounts(request, response, path);
   }
   if (path === '/api/local-note') {
     if (request.method === 'GET') {

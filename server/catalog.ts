@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { readJson, sendJson } from './http.js';
+import { findProduct, productSelect, recordInventoryMovement } from './inventory.js';
 
 const photoLimit = 2 * 1024 * 1024;
 const nameLimit = 100;
@@ -49,17 +50,6 @@ export function createCatalog(database: DatabaseSync) {
     'CREATE INDEX IF NOT EXISTS inventory_by_product ON inventory_movements(product_id, id);',
   ].join('\n'));
 
-  const select = [
-    'SELECT p.id, name, brand, presentation, price, package_name AS packageName,',
-    '  units_per_package AS unitsPerPackage, active, photo IS NOT NULL AS hasPhoto,',
-    '  COALESCE((SELECT SUM(units) FROM inventory_movements WHERE product_id = p.id), 0) AS stock',
-    'FROM products p',
-  ].join(' ');
-
-  function productById(id: number) {
-    return database.prepare(select + ' WHERE p.id = ?').get(id);
-  }
-
   async function saveProduct(request: IncomingMessage, response: ServerResponse, id?: number) {
     const input = await readJson(request, Math.ceil(photoLimit / 3) * 4 + 4096);
     if (!input) return sendJson(response, 400, { error: 'Revisa los datos. La foto admite hasta 2 MB.' });
@@ -84,14 +74,14 @@ export function createCatalog(database: DatabaseSync) {
         'INSERT INTO products (name, brand, presentation, price, package_name, units_per_package, active, photo, photo_mime) ' +
         'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       ).run(...fields, photo?.bytes ?? null, photo?.mime ?? null);
-      return sendJson(response, 201, productById(Number(result.lastInsertRowid)));
+      return sendJson(response, 201, findProduct(database, Number(result.lastInsertRowid)));
     }
     const result = database.prepare(
       'UPDATE products SET name = ?, brand = ?, presentation = ?, price = ?, package_name = ?, units_per_package = ?, active = ?' +
       (updatePhoto ? ', photo = ?, photo_mime = ?' : '') + ' WHERE id = ?',
     ).run(...fields, ...(updatePhoto ? [photo?.bytes ?? null, photo?.mime ?? null] : []), id);
     if (!result.changes) return sendJson(response, 404, { error: 'Producto no encontrado.' });
-    return sendJson(response, 200, productById(id));
+    return sendJson(response, 200, findProduct(database, id));
   }
 
   async function addMovement(request: IncomingMessage, response: ServerResponse, id: number) {
@@ -106,7 +96,7 @@ export function createCatalog(database: DatabaseSync) {
     database.exec('BEGIN IMMEDIATE');
     let committed = false;
     try {
-      const product = productById(id);
+      const product = findProduct(database, id);
       if (!product) return sendJson(response, 404, { error: 'Producto no encontrado.' });
       if (!product.active) return sendJson(response, 409, { error: 'Reactiva el producto antes de mover sus existencias.' });
       if (unit === 'package' && !product.packageName) {
@@ -118,12 +108,11 @@ export function createCatalog(database: DatabaseSync) {
       if (newStock < 0 || newStock > quantityLimit) {
         return sendJson(response, 409, { error: newStock < 0 ? 'No hay suficientes unidades.' : 'Se excede el límite de existencias.' });
       }
-      database.prepare(
-        'INSERT INTO inventory_movements (product_id, units, reason, created_at, quantity, input_unit, units_per_input) ' +
-        'VALUES (?, ?, ?, ?, ?, ?, ?)',
-      ).run(id, units, reason, new Date().toISOString(), quantity,
-        unit === 'package' ? String(product.packageName) : 'unidad', unitsPerInput);
-      const updated = productById(id);
+      recordInventoryMovement(database, {
+        productId: id, units, reason, createdAt: new Date().toISOString(), quantity, unitsPerInput,
+        inputUnit: unit === 'package' ? String(product.packageName) : 'unidad',
+      });
+      const updated = findProduct(database, id);
       database.exec('COMMIT');
       committed = true;
       return sendJson(response, 201, updated);
@@ -139,13 +128,13 @@ export function createCatalog(database: DatabaseSync) {
     const id = Number(rawId);
     if (rawId && !Number.isSafeInteger(id)) return sendJson(response, 404, { error: 'Producto no encontrado.' });
     if (!rawId && request.method === 'GET') {
-      return sendJson(response, 200, database.prepare(select + ' ORDER BY active DESC, name COLLATE NOCASE, id').all());
+      return sendJson(response, 200, database.prepare(productSelect + ' ORDER BY active DESC, name COLLATE NOCASE, id').all());
     }
     if (!rawId && request.method === 'POST') return saveProduct(request, response);
     if (rawId && !action && request.method === 'PUT') return saveProduct(request, response, id);
     if (action === 'movements' && request.method === 'POST') return addMovement(request, response, id);
     if (action === 'movements' && request.method === 'GET') {
-      if (!productById(id)) return sendJson(response, 404, { error: 'Producto no encontrado.' });
+      if (!findProduct(database, id)) return sendJson(response, 404, { error: 'Producto no encontrado.' });
       const rows = database.prepare(
         'SELECT id, units, reason, created_at AS createdAt, quantity, input_unit AS inputUnit, units_per_input AS unitsPerInput ' +
         'FROM inventory_movements WHERE product_id = ? ORDER BY id DESC',

@@ -4,7 +4,7 @@ Proyecto de portafolio para administrar un establecimiento con seis mesas de bil
 
 ## Estado
 
-La aplicación local permite guardar una nota de caja y administrar el catálogo y sus existencias. Crea productos con foto, registra compras por empaque o unidad, consulta los movimientos y desactiva productos que ya no vendes.
+La aplicación local permite administrar el inventario, registrar ventas de productos y manejar cuentas por nombre. El cajero puede cobrar de inmediato, dejar un saldo fiado o registrar un abono con efectivo, transferencia y fichas.
 
 ## Ejecutar en el computador
 
@@ -20,7 +20,9 @@ Abre <http://127.0.0.1:4173>. La instalación inicial de dependencias requiere i
 
 Para probar el inventario, crea una cerveza con un empaque «Canasta» de 30 unidades. Registra una entrada de 2 canastas: las existencias deben subir a 60. Registra después una salida manual de 1 unidad con su motivo: deben quedar 59.
 
-Ejecuta `npm test` para compilar y comprobar automáticamente la conversión por empaque, el historial, las fotos y la persistencia después de reiniciar. La prueba usa una base temporal.
+Para probar el fiado, crea una cuenta en **Ventas y cuentas → Cuentas por nombre**. Luego abre **Registrar venta**, agrega cuatro cervezas de $4.000 y registra $6.000 en efectivo. Deben quedar $10.000 pendientes y salir cuatro unidades. Registra después un abono de $7.000 en efectivo y una ficha. El saldo queda en cero sin otra salida de inventario.
+
+Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
 
 La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo. Supabase se incorporará con el panel remoto.
 
