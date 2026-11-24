@@ -21,7 +21,12 @@ export async function api<T>(path: string, data?: object): Promise<T> {
     headers: data ? { 'Content-Type': 'application/json' } : undefined,
     body: data ? JSON.stringify(data) : undefined,
   });
+  const restart = 'La pantalla no coincide con el servidor de caja. Detén el servidor anterior y ejecuta npm start.';
+  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(restart);
   const result = await response.json();
+  if (response.status === 404 && (result.code === 'API_ROUTE_NOT_FOUND' || result.error === 'Página no encontrada.')) {
+    throw new Error(restart);
+  }
   if (!response.ok) throw new Error(result.error ?? 'No se pudo completar la operación.');
   return result as T;
 }

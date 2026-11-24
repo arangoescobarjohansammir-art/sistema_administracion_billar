@@ -1,6 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, extname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +37,14 @@ const contentTypes: Record<string, string> = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
 };
+// Keep serving the frontend that was built with this process, even if a new build runs.
+const assets = new Map([['/', readFileSync(new URL('index.html', client))]]);
+for (const entry of readdirSync(new URL('assets/', client), { withFileTypes: true })) {
+  if (entry.isFile()) {
+    const name = 'assets/' + entry.name;
+    assets.set('/' + name, readFileSync(new URL(name, client)));
+  }
+}
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse) {
   const addressPort = request.socket.localPort;
@@ -89,19 +96,17 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     return sendJson(response, 405, { error: 'Método no permitido.' });
   }
 
-  const file = path === '/' ? 'index.html' : /^\/assets\/[\w.-]+$/.test(path) ? path.slice(1) : null;
-  if (request.method !== 'GET' || !file) return sendJson(response, 404, { error: 'Página no encontrada.' });
-  try {
-    const body = await readFile(new URL(file, client));
-    response.writeHead(200, {
-      'Content-Type': contentTypes[extname(file)] ?? 'application/octet-stream',
-      'X-Content-Type-Options': 'nosniff',
-    });
-    response.end(body);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    sendJson(response, 404, { error: 'Archivo no encontrado. Ejecuta npm run build.' });
+  if (path.startsWith('/api/')) {
+    return sendJson(response, 404, { code: 'API_ROUTE_NOT_FOUND', error: 'La ruta de la aplicación no existe.' });
   }
+  const body = request.method === 'GET' ? assets.get(path) : undefined;
+  if (!body) return sendJson(response, 404, { error: 'Página no encontrada.' });
+  response.writeHead(200, {
+    'Content-Type': contentTypes[path === '/' ? '.html' : extname(path)] ?? 'application/octet-stream',
+    'Cache-Control': path === '/' ? 'no-store' : 'public, max-age=31536000, immutable',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  response.end(body);
 }
 
 const server = createServer((request, response) => {

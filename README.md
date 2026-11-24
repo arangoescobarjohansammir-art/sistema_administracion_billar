@@ -20,11 +20,10 @@ Con [Node.js](https://nodejs.org/) 22.12 o posterior, abre la terminal de VS Cod
 
 ```sh
 npm ci
-npm run build
 npm start
 ```
 
-Abre <http://127.0.0.1:4173>. La instalación inicial de dependencias requiere internet. Una vez compilada, la aplicación usa archivos y datos locales y se inicia con `npm start`.
+Abre <http://127.0.0.1:4173>. La instalación inicial de dependencias requiere internet. Después, `npm start` compila e inicia juntos la pantalla y el servidor con archivos y datos locales. Al actualizar, detén primero la ejecución anterior con **Ctrl+C** y vuelve a ejecutar `npm start`.
 
 Para probar el inventario, crea una cerveza con un empaque «Canasta» de 30 unidades. Registra una entrada de 2 canastas: las existencias deben subir a 60. Registra después una salida manual de 1 unidad con su motivo: deben quedar 59.
 

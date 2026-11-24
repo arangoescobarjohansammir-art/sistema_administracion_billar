@@ -7,14 +7,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-export async function testServer() {
+export async function testServer(entry = 'dist/server/index.js') {
   const folder = await mkdtemp(join(tmpdir(), 'tejo-billar-test-'));
   const databasePath = join(folder, 'test.sqlite');
   let child;
   let base;
 
   async function start() {
-    child = spawn(process.execPath, ['dist/server/index.js'], {
+    child = spawn(process.execPath, [entry], {
       env: { ...process.env, PORT: '0', CAJA_DB_PATH: databasePath },
       stdio: ['ignore', 'pipe', 'inherit'],
     });
