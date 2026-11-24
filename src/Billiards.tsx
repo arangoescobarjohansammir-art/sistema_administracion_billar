@@ -219,7 +219,7 @@ export function Billiards() {
                 setError('');
               }}>
                 <strong>Mesa {number}</strong>
-                <span>{entry ? entry.stoppedAt === null ? 'En juego' : 'Por liquidar' : 'Libre'}</span>
+                <span data-occupied={Boolean(entry)}>{entry ? entry.stoppedAt === null ? 'En juego' : 'Por liquidar' : 'Libre'}</span>
               </button></li>
             );
           })}

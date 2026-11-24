@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Catalog } from './Catalog';
-import { Accounts } from './Accounts';
+import { Accounts, api } from './Accounts';
 import { Billiards } from './Billiards';
 import { Tejo } from './Tejo';
 import { Cash } from './Cash';
+import { QuickSale } from './QuickSale';
+import { useCajaKeyboard } from './keyboard';
 import './style.css';
 
 type LocalNote = { text: string; updatedAt: string | null };
@@ -82,30 +84,55 @@ function LocalNoteForm() {
   );
 }
 
+const modules = [
+  ['sale', 'Venta'], ['billiards', 'Billar'], ['tejo', 'Tejo'], ['accounts', 'Cuentas'],
+  ['catalog', 'Inventario'], ['cash', 'Caja'], ['note', 'Nota de caja'],
+] as const;
+
 function App() {
-  const [section, setSection] = useState<'catalog' | 'accounts' | 'billiards' | 'tejo' | 'cash' | 'note'>('cash');
+  const [section, setSection] = useState<typeof modules[number][0] | null>(null);
+  const [cashOpen, setCashOpen] = useState<boolean | null>(null);
+  useCajaKeyboard();
+  useEffect(() => {
+    void api<{ active: unknown }>('cash').then((cash) => {
+      setCashOpen(Boolean(cash.active));
+      setSection((previous) => previous ?? (cash.active ? 'sale' : 'cash'));
+    }).catch(() => setSection((previous) => previous ?? 'cash'));
+  }, []);
 
   return (
-    <main>
-      <header>
-        <p>Caja local</p>
-        <h1>Tejo y billar</h1>
-        <nav className="actions" aria-label="Secciones de caja">
-          <button className="navigation" aria-pressed={section === 'cash'} onClick={() => setSection('cash')}>Caja</button>
-          <button className="navigation" aria-pressed={section === 'catalog'} onClick={() => setSection('catalog')}>Inventario</button>
-          <button className="navigation" aria-pressed={section === 'accounts'} onClick={() => setSection('accounts')}>Ventas y cuentas</button>
-          <button className="navigation" aria-pressed={section === 'billiards'} onClick={() => setSection('billiards')}>Billar</button>
-          <button className="navigation" aria-pressed={section === 'tejo'} onClick={() => setSection('tejo')}>Tejo</button>
-          <button className="navigation" aria-pressed={section === 'note'} onClick={() => setSection('note')}>Nota de caja</button>
+    <div id="caja-app">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <div className="app-brand"><span className="app-mark" aria-hidden="true">TB</span>
+            <div><h1>Tejo &amp; Billar</h1><p>Punto de venta</p></div></div>
+          <span className="app-shift" data-open={cashOpen === true}>
+            {cashOpen === null ? 'Caja local' : cashOpen ? 'Caja abierta' : 'Caja cerrada'}
+          </span>
+        </div>
+        <nav className="actions app-nav" data-main-nav aria-label="Secciones de caja">
+          {modules.map(([id, name]) => <button key={id} type="button" className="navigation"
+            aria-pressed={section === id} onClick={() => setSection(id)}>{name}</button>)}
         </nav>
       </header>
-      {section === 'catalog' && <Catalog />}
-      {section === 'accounts' && <Accounts />}
-      {section === 'billiards' && <Billiards />}
-      {section === 'tejo' && <Tejo />}
-      {section === 'cash' && <Cash />}
-      {section === 'note' && <LocalNoteForm />}
-    </main>
+      <main>
+        {section === null && <p role="status">Cargando caja…</p>}
+        <div hidden={section !== 'sale'}>
+          <QuickSale active={section === 'sale'} cashOpen={cashOpen} onCash={() => setSection('cash')} />
+        </div>
+        {section === 'catalog' && <Catalog />}
+        {section === 'accounts' && <Accounts />}
+        {section === 'billiards' && <Billiards />}
+        {section === 'tejo' && <Tejo />}
+        {section === 'cash' && <Cash onShiftChange={setCashOpen} />}
+        {section === 'note' && <LocalNoteForm />}
+      </main>
+      <footer className="app-keys" aria-label="Atajos de teclado">
+        <span><kbd>↑ ↓ ← →</kbd> Moverse</span><span><kbd>Enter</kbd> Elegir</span>
+        <span><kbd>Tab</kbd> Cambiar de campo</span><span><kbd>Esc</kbd> Volver del cobro</span>
+        {section === 'sale' && <><span><kbd>F2</kbd> Buscar</span><span><kbd>F4</kbd> Cobrar</span></>}
+      </footer>
+    </div>
   );
 }
 

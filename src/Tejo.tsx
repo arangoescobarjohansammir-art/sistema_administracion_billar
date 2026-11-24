@@ -327,7 +327,7 @@ export function Tejo() {
               return <li key={number}><button className="table-button" aria-label={courtLabel(courtType, number)}
                 aria-pressed={courtType === type && number === court} disabled={busy} onClick={() => {
                   setType(courtType); setCourt(number); clearSelection();
-                }}><strong>Cancha {number}</strong><span>{entry ? entry.rounds.length + (entry.rounds.length === 1 ? ' chico' : ' chicos') : 'Libre'}</span></button></li>;
+                }}><strong>Cancha {number}</strong><span data-occupied={Boolean(entry)}>{entry ? entry.rounds.length + (entry.rounds.length === 1 ? ' chico' : ' chicos') : 'Libre'}</span></button></li>;
             })}</ul>
           </section>
         ))}

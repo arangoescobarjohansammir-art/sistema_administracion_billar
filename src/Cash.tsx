@@ -272,7 +272,7 @@ function Ledger({ detail }: { detail: Detail }) {
   );
 }
 
-export function Cash() {
+export function Cash({ onShiftChange }: { onShiftChange: (open: boolean) => void }) {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [history, setHistory] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -287,7 +287,9 @@ export function Cash() {
   async function load() {
     setLoadError('');
     try {
-      setDashboard(await api<Dashboard>('cash'));
+      const current = await api<Dashboard>('cash');
+      setDashboard(current);
+      onShiftChange(Boolean(current.active));
     } catch (error) {
       setLoadError(message(error));
     }
