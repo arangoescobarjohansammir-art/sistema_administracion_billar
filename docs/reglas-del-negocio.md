@@ -58,6 +58,6 @@
 
 ## Detalles por confirmar al implementar
 
-- Cómo redondear el cobro de billar cuando el tiempo incluye segundos y cómo repartir un peso que sobre al dividir una cuenta.
+- Confirmar la regla de redondeo que usa la versión actual de billar. Se cobra por segundos completos y se redondea el importe al peso más cercano. Si al repartir por igual queda algún peso de una línea, se asigna en el orden en que aparecen las personas.
 - Cuántas canchas de tejo se necesitan en la interfaz y qué nombres usarán.
 - Quién puede autorizar anulaciones o ajustes y qué comprobante de transferencia se registrará, si se necesita alguno.

@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-type Account = { id: number; name: string; balance: number };
-type PaymentInput = { cash: number; transfer: number; tokens: number };
+export type Account = { id: number; name: string; balance: number };
+export type PaymentInput = { cash: number; transfer: number; tokens: number };
 type Payment = PaymentInput & { id: number; saleId: number | null; tokenValue: number; createdAt: string };
 type Sale = { id: number; total: number; createdAt: string; items: { label: string; quantity: number; unitPrice: number }[] };
 type DirectSale = Sale & { payment: Payment | null };
 type Detail = { account: Account; sales: Sale[]; payments: Payment[] };
-type Product = { id: number; name: string; brand: string; presentation: string; price: number; active: 0 | 1; stock: number };
+export type Product = { id: number; name: string; brand: string; presentation: string; price: number; active: 0 | 1; stock: number };
 type CartItem = { product: Product; quantity: number };
 
 const tokenValue = 3000;
-const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+export const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
-const emptyPayment = { cash: 0, transfer: 0, tokens: 0 };
-const totalPayment = (payment: PaymentInput, rate = tokenValue) => payment.cash + payment.transfer + payment.tokens * rate;
+export const emptyPayment = { cash: 0, transfer: 0, tokens: 0 };
+export const totalPayment = (payment: PaymentInput, rate = tokenValue) => payment.cash + payment.transfer + payment.tokens * rate;
 const normalize = (name: string) => name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
-const label = (product: Product) => [product.name, product.brand, product.presentation].filter(Boolean).join(' · ');
+export const label = (product: Product) => [product.name, product.brand, product.presentation].filter(Boolean).join(' · ');
 
-async function api<T>(path: string, data?: object): Promise<T> {
+export async function api<T>(path: string, data?: object): Promise<T> {
   const response = await fetch('/api/' + path, {
     method: data ? 'POST' : 'GET',
     headers: data ? { 'Content-Type': 'application/json' } : undefined,
@@ -28,12 +28,12 @@ async function api<T>(path: string, data?: object): Promise<T> {
   return result as T;
 }
 
-function message(error: unknown) {
+export function message(error: unknown) {
   return error instanceof TypeError ? 'Se perdió la comunicación con la caja. Reintenta sin cambiar los valores.'
     : error instanceof Error ? error.message : 'No se pudo completar la operación.';
 }
 
-function useOperation() {
+export function useOperation() {
   const last = useRef<{ payload: string; id: string } | null>(null);
   return async (path: string, data: object) => {
     const payload = JSON.stringify([path, data]);
@@ -44,7 +44,7 @@ function useOperation() {
   };
 }
 
-function PaymentFields({ value, onChange }: { value: PaymentInput; onChange: (value: PaymentInput) => void }) {
+export function PaymentFields({ value, onChange }: { value: PaymentInput; onChange: (value: PaymentInput) => void }) {
   return (
     <div className="field-grid">
       <label>Efectivo (COP)<input type="number" min={0} step={1} value={value.cash || ''}
@@ -67,7 +67,7 @@ function PaymentBreakdown({ payment }: { payment: Payment }) {
 
 function SaleLines({ sale }: { sale: Sale }) {
   return <ul className="sale-lines">{sale.items.map((item, index) => (
-    <li key={index}><span>{item.quantity} × {item.label}</span><span>{money.format(item.quantity * item.unitPrice)}</span></li>
+    <li key={index}><span>{item.quantity > 1 ? item.quantity + ' × ' : ''}{item.label}</span><span>{money.format(item.quantity * item.unitPrice)}</span></li>
   ))}</ul>;
 }
 

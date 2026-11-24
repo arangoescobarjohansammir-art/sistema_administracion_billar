@@ -113,6 +113,17 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: #a7e0bc;
 .ledger-list p { margin-bottom: 0; }
 .row-between, .sale-lines li { display: flex; justify-content: space-between; gap: 0.5rem 1rem; flex-wrap: wrap; }
 .sale-lines li { padding-block: 0.25rem; }
+.billiard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); gap: 0.55rem; list-style: none; padding: 0; }
+.table-button { width: 100%; min-height: 4.7rem; text-align: left; color: #eff6f1; background: #233a30; border: 1px solid #506c5e; }
+.table-button[aria-pressed="true"] { color: #12241a; background: #a7e0bc; border-color: #a7e0bc; }
+.table-button span { display: block; margin-top: 0.2rem; font-size: 0.9rem; font-weight: 500; }
+.billiard-panel { display: grid; gap: 0.9rem; border: 1px solid #405a4e; border-radius: 1rem; padding: clamp(1rem, 3vw, 1.5rem); }
+.billiard-panel > button { justify-self: start; }
+.billiard-panel .section-title, .billiard-panel .totals, .billiard-panel > p { margin: 0; }
+.clock { font-size: clamp(1.5rem, 4vw, 2rem); font-variant-numeric: tabular-nums; color: #a7e0bc; }
+.bill-part { border: 1px solid #506c5e; border-radius: 0.6rem; padding: 0.8rem; margin: 1rem 0; min-width: 0; }
+.bill-part legend { font-weight: 700; padding-inline: 0.35rem; }
+.billiard-panel form .section-title { margin-bottom: 0.85rem; }
 
 @media (max-width: 36rem) {
   main { margin-top: 1.25rem; }

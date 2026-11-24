@@ -6,6 +6,8 @@ Proyecto de portafolio para administrar un establecimiento con seis mesas de bil
 
 La aplicación local permite administrar el inventario, registrar ventas de productos y manejar cuentas por nombre. El cajero puede cobrar de inmediato, dejar un saldo fiado o registrar un abono con efectivo, transferencia y fichas.
 
+En **Billar**, puedes abrir cualquiera de las seis mesas a $6.000 por hora, anotar los productos que se entreguen y detener el tiempo cuando termine el juego. Reparte el tiempo y cada consumo por igual o con importes distintos, y cobra o fía la parte de cada persona antes de liberar la mesa.
+
 ## Ejecutar en el computador
 
 Con [Node.js](https://nodejs.org/) 22.12 o posterior, abre la terminal de VS Code en la carpeta del proyecto y ejecuta:
@@ -22,7 +24,7 @@ Para probar el inventario, crea una cerveza con un empaque «Canasta» de 30 uni
 
 Para probar el fiado, crea una cuenta en **Ventas y cuentas → Cuentas por nombre**. Luego abre **Registrar venta**, agrega cuatro cervezas de $4.000 y registra $6.000 en efectivo. Deben quedar $10.000 pendientes y salir cuatro unidades. Registra después un abono de $7.000 en efectivo y una ficha. El saldo queda en cero sin otra salida de inventario.
 
-Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
+Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, la liquidación de billar y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
 
 La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo. Supabase se incorporará con el panel remoto.
 
@@ -47,8 +49,9 @@ La caja será el origen de los datos. El envío a Supabase se hará en segundo p
 2. Preparar el proyecto local, conectar SQLite y comprobar que guarda datos sin internet.
 3. Implementar catálogo, fotos e inventario.
 4. Implementar cuentas por nombre y cobros.
-5. Incorporar el cronómetro y los repartos de billar, y los chicos y canjes de tejo.
-6. Implementar apertura, movimientos, cuadre y cierre de los fondos de caja.
-7. Sincronizar con Supabase, crear el panel del administrador y preparar una demostración con datos ficticios.
+5. Incorporar el cronómetro y el reparto de billar.
+6. Implementar los chicos y canjes de tejo.
+7. Implementar apertura, movimientos, cuadre y cierre de los fondos de caja.
+8. Sincronizar con Supabase, crear el panel del administrador y preparar una demostración con datos ficticios.
 
 El repositorio de portafolio usará datos ficticios. La base de datos del negocio, fotos cargadas por el cajero, credenciales, respaldos y archivos de exportación se guardarán fuera del código versionado.

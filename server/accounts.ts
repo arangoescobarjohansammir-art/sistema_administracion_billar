@@ -9,22 +9,22 @@ const maxMoney = 1_000_000_000;
 type Payment = { cash: number; transfer: number; tokens: number };
 type SaleItem = { productId: number; quantity: number; unitPrice: number };
 
-function whole(value: unknown, min: number, max: number): value is number {
+export function whole(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
 }
 
-function record(value: unknown): Record<string, unknown> | null {
+export function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-function paymentFields(value: unknown): Payment | null {
+export function paymentFields(value: unknown): Payment | null {
   const { cash, transfer, tokens } = record(value) ?? {};
   if (!whole(cash, 0, maxMoney) || !whole(transfer, 0, maxMoney) || !whole(tokens, 0, Math.floor(maxMoney / tokenValue))) return null;
   const payment = { cash, transfer, tokens };
   return paymentTotal(payment) <= maxMoney ? payment : null;
 }
 
-function paymentTotal(payment: Payment) {
+export function paymentTotal(payment: Payment) {
   return payment.cash + payment.transfer + payment.tokens * tokenValue;
 }
 
@@ -42,7 +42,7 @@ function saleItems(value: unknown): SaleItem[] | null {
   return items;
 }
 
-class ValidationError extends Error {
+export class ValidationError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
@@ -61,6 +61,10 @@ export function createAccounts(database: DatabaseSync) {
     '  quantity INTEGER NOT NULL CHECK (quantity > 0), unit_price INTEGER NOT NULL CHECK (unit_price >= 0),',
     '  movement_id INTEGER NOT NULL UNIQUE REFERENCES inventory_movements(id)',
     ') STRICT;',
+    'CREATE TABLE IF NOT EXISTS sale_allocated_lines (',
+    '  id INTEGER PRIMARY KEY, sale_id INTEGER NOT NULL REFERENCES sales(id),',
+    '  label TEXT NOT NULL, amount INTEGER NOT NULL CHECK (amount > 0)',
+    ') STRICT;',
     'CREATE TABLE IF NOT EXISTS account_payments (',
     '  id INTEGER PRIMARY KEY, account_id INTEGER REFERENCES customer_accounts(id),',
     '  sale_id INTEGER UNIQUE REFERENCES sales(id),',
@@ -74,6 +78,7 @@ export function createAccounts(database: DatabaseSync) {
     ') STRICT;',
     'CREATE INDEX IF NOT EXISTS sales_by_account ON sales(account_id, id);',
     'CREATE INDEX IF NOT EXISTS items_by_sale ON sale_items(sale_id, id);',
+    'CREATE INDEX IF NOT EXISTS allocated_lines_by_sale ON sale_allocated_lines(sale_id, id);',
     'CREATE INDEX IF NOT EXISTS payments_by_account ON account_payments(account_id, id);',
   ].join('\n'));
 
@@ -118,6 +123,11 @@ export function createAccounts(database: DatabaseSync) {
     ).run(accountId, saleId, payment.cash, payment.transfer, payment.tokens, tokenValue, createdAt).lastInsertRowid);
   }
 
+  function insertSale(accountId: number | null, total: number, createdAt: string) {
+    return Number(database.prepare('INSERT INTO sales (account_id, total, created_at) VALUES (?, ?, ?)')
+      .run(accountId, total, createdAt).lastInsertRowid);
+  }
+
   async function registerSale(request: IncomingMessage, response: ServerResponse) {
     const input = await readJson(request, 12_000);
     const account = input?.accountId;
@@ -143,8 +153,7 @@ export function createAccounts(database: DatabaseSync) {
         return { ...item, label };
       });
       const createdAt = new Date().toISOString();
-      const saleId = Number(database.prepare('INSERT INTO sales (account_id, total, created_at) VALUES (?, ?, ?)')
-        .run(accountId, total, createdAt).lastInsertRowid);
+      const saleId = insertSale(accountId, total, createdAt);
       for (const item of delivered) {
         const movementId = recordInventoryMovement(database, {
           productId: item.productId, units: -item.quantity, quantity: item.quantity,
@@ -178,17 +187,18 @@ export function createAccounts(database: DatabaseSync) {
     const sales = database.prepare('SELECT id, total, created_at AS createdAt FROM sales' + filter)
       .all(...(accountId === null ? [] : [accountId]));
     const items = database.prepare('SELECT label, quantity, unit_price AS unitPrice FROM sale_items WHERE sale_id = ? ORDER BY id');
+    const allocations = database.prepare('SELECT label, 1 AS quantity, amount AS unitPrice FROM sale_allocated_lines WHERE sale_id = ? ORDER BY id');
     return sales.map((sale) => ({
       id: Number(sale.id),
       total: Number(sale.total),
       createdAt: String(sale.createdAt),
-      items: items.all(Number(sale.id)),
+      items: [...items.all(Number(sale.id)), ...allocations.all(Number(sale.id))],
     }));
   }
 
   const paymentsSelect = 'SELECT id, sale_id AS saleId, cash, transfer, tokens, token_value AS tokenValue, created_at AS createdAt FROM account_payments';
 
-  return async function handleAccounts(request: IncomingMessage, response: ServerResponse, path: string) {
+  async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     try {
       if (path === '/api/sales' && request.method === 'POST') return await registerSale(request, response);
       if (path === '/api/sales' && request.method === 'GET') {
@@ -226,5 +236,6 @@ export function createAccounts(database: DatabaseSync) {
       if (!(error instanceof ValidationError)) throw error;
       return sendJson(response, error.status, { error: error.message });
     }
-  };
+  }
+  return { handle, accountById, writeOnce, insertSale, insertPayment };
 }

@@ -8,12 +8,13 @@ import { createInterface } from 'node:readline';
 
 export async function testServer() {
   const folder = await mkdtemp(join(tmpdir(), 'tejo-billar-test-'));
+  const databasePath = join(folder, 'test.sqlite');
   let child;
   let base;
 
   async function start() {
     child = spawn(process.execPath, ['dist/server/index.js'], {
-      env: { ...process.env, PORT: '0', CAJA_DB_PATH: join(folder, 'test.sqlite') },
+      env: { ...process.env, PORT: '0', CAJA_DB_PATH: databasePath },
       stdio: ['ignore', 'pipe', 'inherit'],
     });
     const lines = createInterface({ input: child.stdout });
@@ -54,7 +55,7 @@ export async function testServer() {
   }
 
   return {
-    start, stop, fetch: fetchLocal, json,
+    start, stop, fetch: fetchLocal, json, databasePath,
     async cleanup() {
       await stop();
       await rm(folder, { recursive: true, force: true });
