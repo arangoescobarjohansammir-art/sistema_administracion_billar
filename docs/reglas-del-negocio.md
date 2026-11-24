@@ -45,6 +45,8 @@
 - Antes de entregar dinero, el cajero cuenta ambos fondos. El cierre compara lo esperado con lo contado y conserva la diferencia. El efectivo de ventas disponible se entrega al administrador y se deja registrada la base para el día siguiente.
 - Si hay diferencias entre el conteo y lo esperado, entre lo transferido y lo verificado, o entre la base dejada y la contada al abrir, el cajero debe registrar la explicación.
 - Las transferencias se comparan con los abonos recibidos. Las fichas y el fiado se reportan aparte del efectivo. El efectivo que se entrega al administrador se registra por separado de los gastos.
+- El cajero cuenta las fichas físicas al abrir y al cerrar. El sistema espera las fichas iniciales más las recibidas por canje y en pagos, menos las entregadas por chicos de tejo. Los consumos hechos directamente con el derecho de un chico no implican un movimiento de ficha física.
+- Si las fichas contadas al cerrar no coinciden con las esperadas, se registra la diferencia y su motivo. El cierre conserva el conteo físico para compararlo con la apertura del siguiente turno.
 - Los movimientos registran fecha y usuario. Las anulaciones, devoluciones y ajustes requieren motivo y conservan el historial.
 
 ## Casos de aceptación
@@ -59,6 +61,7 @@
 | Se registran dos canastas de 30 cervezas. Se entregan una cerveza fiada y otra por canje. | Entran 60 unidades y salen dos, con el motivo de cada salida. Si no había existencias previas ni otros movimientos, quedan 58 unidades. |
 | Se abre con $100.000 de base, se cobran $250.000 en efectivo y se gastan $70.000 en una compra imprevista. | Se esperan $280.000 en el cajón antes de cerrar. Si coincide el conteo y se dejan $100.000 de base, se entregan $180.000 al administrador. El cierre conserva el cobro y el retiro con su motivo. |
 | Se entregan $200.000 al fondo para compras y se usan $80.000 de ese fondo. | Quedan $120.000 para devolver al administrador. La caja de ventas no cambia. |
+| Se abre con 100 fichas, se entregan seis, se reciben tres por canje y tres en pagos. Al cierre se cuentan 98. | Se esperan 100 fichas. El cierre conserva un faltante de dos con su explicación y el siguiente turno compara su conteo con las 98 fichas físicas del cierre. |
 | Se pierde internet, se confirma un cobro y después se restablece la conexión. | El cobro queda guardado en el computador. Aparece una sola vez en el panel al sincronizar, incluso si el envío necesita reintentos. |
 
 ## Detalles por confirmar al implementar

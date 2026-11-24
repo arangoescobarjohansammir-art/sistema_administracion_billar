@@ -10,7 +10,9 @@ En **Billar**, puedes abrir cualquiera de las seis mesas a $6.000 por hora, anot
 
 En **Tejo → Canchas y chicos**, selecciona una cancha de maxitejo o de tejo largo y abre un grupo con los nombres de los jugadores. Registra quién perdió cada chico y su pago, o deja el cargo fiado. Cada jugador puede recibir una ficha o consumir su valor en productos. El grupo conserva el contador y el historial de los chicos hasta que se libere la cancha. Para recibir fichas físicas a cambio de productos, usa **Tejo → Canjear fichas**.
 
-En **Caja**, abre el turno con el nombre del cajero y la base de efectivo contada. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, ingresa el conteo de ambos fondos, el total de transferencias verificadas y la base que dejas. El sistema muestra cuánto entregas al administrador y guarda el cuadre con el detalle del turno.
+En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, ingresa el conteo de ambos fondos, las transferencias verificadas, las fichas físicas y la base que dejas. El sistema guarda los conteos, las diferencias y cuánto entregas al administrador.
+
+El cuadre de fichas suma las recibidas por pago y canje, y resta las entregadas en tejo. El próximo turno muestra cuántas se contaron al cierre anterior. Si estás actualizando con un turno abierto, puedes completar su conteo inicial desde **Caja** y registrar de dónde salió ese dato.
 
 ## Ejecutar en el computador
 

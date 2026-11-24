@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { testServer } from './support/local-server.mjs';
 
@@ -23,7 +24,7 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   assert.equal((await json('/api/products', 200))[0].stock, 300);
   const first = await openShift();
   const shift = '/api/cash/' + first.id;
-  await post('/api/cash', 409, { cashier: 'Otro', openingBase: 0, note: '' });
+  await post('/api/cash', 409, { cashier: 'Otro', openingBase: 0, openingTokens: 0, note: '' });
   await post('/api/sales', 201, sale(243, cash(243_000)));
   await post('/api/sales', 201, sale(20, { cash: 7000, transfer: 10_000, tokens: 1 }));
   await post('/api/sales', 201, sale(16, cash(0), customer.id));
@@ -55,12 +56,13 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   assert.equal(open.totals.purchasesExpected, 120_000);
   assert.equal(open.totals.transferExpected, 10_000);
   assert.equal(open.totals.tokenAmount, 3000);
+  assert.equal(open.totals.expectedTokens, 101);
   assert.equal(open.totals.pendingBalance, 16_000);
   assert.equal(open.payments.length, 2);
   assert.equal(open.movements.find((item) => item.id === expense.id).inventoryLinks, 1);
   assert.equal((await json(productMoves, 200))[0].cashMovementId, expense.id);
 
-  const close = { salesCounted: 280_000, purchasesCounted: 120_000, transferConfirmed: 9500, nextBase: 100_000, note: '' };
+  const close = { salesCounted: 280_000, purchasesCounted: 120_000, transferConfirmed: 9500, nextBase: 100_000, countedTokens: 101, note: '' };
   await post(shift + '/close', 400, close);
   await post(shift + '/close', 400, { ...close, nextBase: 280_001 });
   const closing = { ...close, note: 'Queda una transferencia de $500 por verificar.', requestId: randomUUID() };
@@ -77,8 +79,8 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   await post(move, 409, { ...purchase, requestId: randomUUID() });
   await json(productMoves, 409, 'POST', receive);
 
-  await post('/api/cash', 400, { cashier: 'Cajero de prueba', openingBase: 90_000, note: '' });
-  const second = await openShift();
+  await post('/api/cash', 400, { cashier: 'Cajero de prueba', openingBase: 90_000, openingTokens: 101, note: '' });
+  const second = await openShift(100_000, 101);
   await post('/api/accounts/' + customer.id + '/payments', 201, { payment: cash(16_000) });
   const next = await json('/api/cash/' + second.id, 200);
   assert.equal(next.shift.previousBase, 100_000);
@@ -88,4 +90,37 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   assert.equal(next.totals.salesExpected, 116_000);
   assert.equal(next.totals.pendingBalance, 0);
   assert.equal((await json(shift, 200)).totals.pendingBalance, 16_000);
+});
+
+test('conserva un turno abierto de una versión anterior al agregar el conteo de fichas', { timeout: 20000 }, async (t) => {
+  const { start, stop, json, cleanup, openShift, databasePath } = await testServer();
+  t.after(cleanup);
+  await start();
+  const shift = await openShift();
+  await stop();
+  const fixture = new DatabaseSync(databasePath);
+  try {
+    fixture.exec('ALTER TABLE cash_shifts DROP COLUMN token_opening_note');
+    fixture.exec('ALTER TABLE cash_shifts DROP COLUMN expected_tokens');
+    fixture.exec('ALTER TABLE cash_shifts DROP COLUMN counted_tokens');
+    fixture.exec('ALTER TABLE cash_shifts DROP COLUMN previous_tokens');
+    fixture.exec('ALTER TABLE cash_shifts DROP COLUMN opening_tokens');
+  } finally {
+    fixture.close();
+  }
+  await start();
+  const path = '/api/cash/' + shift.id;
+  assert.equal((await json(path, 200)).totals.expectedTokens, null);
+  const close = {
+    salesCounted: 100_000, purchasesCounted: 0, transferConfirmed: 0, nextBase: 100_000, countedTokens: 40, note: '',
+  };
+  await json(path + '/close', 409, 'POST', { ...close, requestId: randomUUID() });
+  const initial = { openingTokens: 40, note: 'Conteo de la libreta de apertura' };
+  await json(path + '/opening-tokens', 201, 'POST', { ...initial, requestId: randomUUID() });
+  await json(path + '/opening-tokens', 409, 'POST', { ...initial, requestId: randomUUID() });
+  await json(path + '/close', 201, 'POST', { ...close, requestId: randomUUID() });
+  const result = await json(path, 200);
+  assert.equal(result.shift.tokenOpeningNote, initial.note);
+  assert.equal(result.totals.expectedTokens, 40);
+  assert.equal(result.totals.tokenDifference, 0);
 });

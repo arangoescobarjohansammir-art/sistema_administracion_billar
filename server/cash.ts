@@ -7,6 +7,7 @@ import { readJson, sendJson } from './http.js';
 
 type Accounts = ReturnType<typeof createAccounts>;
 const maxCash = 1_000_000_000;
+const maxTokens = 1_000_000;
 const readText = (value: unknown, max: number) =>
   typeof value === 'string' && value.trim().length <= max ? value.trim() : null;
 
@@ -17,7 +18,9 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
     '  opening_base INTEGER NOT NULL CHECK (opening_base >= 0), previous_base INTEGER, opening_note TEXT NOT NULL,',
     '  closed_at TEXT, sales_counted INTEGER, purchases_counted INTEGER, transfer_confirmed INTEGER,',
     '  next_base INTEGER, closing_note TEXT, sales_expected INTEGER, purchases_expected INTEGER,',
-    '  transfer_expected INTEGER, pending_balance INTEGER',
+    '  transfer_expected INTEGER, pending_balance INTEGER,',
+    '  opening_tokens INTEGER CHECK (opening_tokens >= 0), previous_tokens INTEGER CHECK (previous_tokens >= 0),',
+    '  counted_tokens INTEGER CHECK (counted_tokens >= 0), expected_tokens INTEGER, token_opening_note TEXT',
     ') STRICT;',
     'CREATE UNIQUE INDEX IF NOT EXISTS cash_single_open_shift ON cash_shifts((1)) WHERE closed_at IS NULL;',
     'CREATE TABLE IF NOT EXISTS cash_movements (',
@@ -60,17 +63,37 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
     'END;',
   ].join('\n'));
 
+  const existingColumns = new Set(database.prepare('PRAGMA table_info(cash_shifts)').all().map(({ name }) => name));
+  const tokenColumns = {
+    opening_tokens: 'INTEGER CHECK (opening_tokens >= 0)',
+    previous_tokens: 'INTEGER CHECK (previous_tokens >= 0)',
+    counted_tokens: 'INTEGER CHECK (counted_tokens >= 0)',
+    expected_tokens: 'INTEGER',
+    token_opening_note: 'TEXT',
+  };
+  for (const [column, definition] of Object.entries(tokenColumns)) {
+    if (!existingColumns.has(column)) database.exec('ALTER TABLE cash_shifts ADD COLUMN ' + column + ' ' + definition);
+  }
+
   const shiftSelect = [
     'SELECT id, cashier, opened_at AS openedAt, opening_base AS openingBase, previous_base AS previousBase,',
     'opening_note AS openingNote, closed_at AS closedAt, sales_counted AS salesCounted,',
     'purchases_counted AS purchasesCounted, transfer_confirmed AS transferConfirmed, next_base AS nextBase,',
     'closing_note AS closingNote, sales_expected AS salesExpected, purchases_expected AS purchasesExpected,',
-    'transfer_expected AS transferExpected, pending_balance AS pendingBalance FROM cash_shifts',
+    'transfer_expected AS transferExpected, pending_balance AS pendingBalance, opening_tokens AS openingTokens,',
+    'previous_tokens AS previousTokens, counted_tokens AS countedTokens, expected_tokens AS expectedTokens,',
+    'token_opening_note AS tokenOpeningNote FROM cash_shifts',
   ].join(' ');
 
-  function mostRecentBase() {
-    const row = database.prepare('SELECT next_base AS amount FROM cash_shifts WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 1').get();
-    return row ? Number(row.amount) : null;
+  function previousClose() {
+    const row = database.prepare([
+      'SELECT next_base AS base, counted_tokens AS tokens FROM cash_shifts',
+      'WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 1',
+    ].join(' ')).get();
+    return {
+      previousBase: row ? Number(row.base) : null,
+      previousTokens: row?.tokens == null ? null : Number(row.tokens),
+    };
   }
 
   function shiftById(id: number) {
@@ -80,20 +103,21 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
   }
 
   function openShift(input: Record<string, unknown>) {
-    const { openingBase } = input;
+    const { openingBase, openingTokens } = input;
     const cashier = readText(input.cashier, 100);
     const note = readText(input.note, 300);
-    if (!cashier || !whole(openingBase, 0, maxCash) || note === null) {
-      throw new ValidationError(400, 'Escribe el nombre del cajero y la base de efectivo contada.');
+    if (!cashier || !whole(openingBase, 0, maxCash) || !whole(openingTokens, 0, maxTokens) || note === null) {
+      throw new ValidationError(400, 'Escribe el nombre del cajero, la base de efectivo y el número de fichas contadas.');
     }
     if (activeShiftId(database) !== null) throw new ValidationError(409, 'Ya hay un turno de caja abierto.');
-    const previousBase = mostRecentBase();
-    if (previousBase !== null && previousBase !== openingBase && !note) {
-      throw new ValidationError(400, 'Explica la diferencia con la base que dejó el turno anterior.');
+    const { previousBase, previousTokens } = previousClose();
+    if (!note && ((previousBase !== null && previousBase !== openingBase) ||
+      (previousTokens !== null && previousTokens !== openingTokens))) {
+      throw new ValidationError(400, 'Explica la diferencia con el efectivo o las fichas que dejó el turno anterior.');
     }
     return Number(database.prepare(
-      'INSERT INTO cash_shifts (cashier, opened_at, opening_base, previous_base, opening_note) VALUES (?, ?, ?, ?, ?)',
-    ).run(cashier, new Date().toISOString(), openingBase, previousBase, note).lastInsertRowid);
+      'INSERT INTO cash_shifts (cashier, opened_at, opening_base, previous_base, opening_note, opening_tokens, previous_tokens) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(cashier, new Date().toISOString(), openingBase, previousBase, note, openingTokens, previousTokens).lastInsertRowid);
   }
 
   function summarize(shift: ReturnType<typeof shiftById>) {
@@ -124,12 +148,19 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
       'SELECT COALESCE(SUM(tokens), 0) AS value FROM cash_shift_redemptions',
       'JOIN tejo_redemptions ON tejo_redemptions.id = redemption_id WHERE shift_id = ?',
     ].join(' ')).get(id);
+    const tokensReceived = Number(payment?.tokens);
+    const tokensIssued = Number(issued?.value);
+    const tokensRedeemed = Number(redeemed?.value);
+    const expectedTokens = shift.expectedTokens === null
+      ? shift.openingTokens === null ? null : Number(shift.openingTokens) + tokensReceived + tokensRedeemed - tokensIssued
+      : Number(shift.expectedTokens);
     return {
       salesCount: Number(sale?.count), salesTotal: Number(sale?.total),
       cashReceived: Number(payment?.cash), transferExpected: Number(transferExpected),
-      tokensReceived: Number(payment?.tokens), tokenAmount: Number(payment?.tokenAmount),
+      tokensReceived, tokenAmount: Number(payment?.tokenAmount),
       accountCollections: Number(payment?.accountCollections), pendingBalance: Number(pending),
-      tokensIssued: Number(issued?.value), tokensRedeemed: Number(redeemed?.value),
+      tokensIssued, tokensRedeemed, expectedTokens,
+      tokenDifference: shift.countedTokens === null || expectedTokens === null ? null : Number(shift.countedTokens) - expectedTokens,
       salesExpected: Number(salesExpected), purchasesExpected: Number(purchasesExpected),
       salesDifference: shift.salesCounted === null ? null : Number(shift.salesCounted) - Number(salesExpected),
       purchasesDifference: shift.purchasesCounted === null ? null : Number(shift.purchasesCounted) - Number(purchasesExpected),
@@ -143,6 +174,19 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
     const shift = shiftById(id);
     if (shift.closedAt !== null) throw new ValidationError(409, 'El turno ya está cerrado.');
     return shift;
+  }
+
+  function recordOpeningTokens(id: number, input: Record<string, unknown>) {
+    const shift = openById(id);
+    if (shift.openingTokens !== null) throw new ValidationError(409, 'El conteo inicial de fichas ya quedó registrado.');
+    const note = readText(input.note, 300);
+    if (!whole(input.openingTokens, 0, maxTokens) || !note) {
+      throw new ValidationError(400, 'Registra las fichas que había al inicio y explica cómo se obtuvo ese conteo.');
+    }
+    const { previousTokens } = previousClose();
+    database.prepare('UPDATE cash_shifts SET opening_tokens = ?, previous_tokens = ?, token_opening_note = ? WHERE id = ?')
+      .run(input.openingTokens, previousTokens, note, id);
+    return id;
   }
 
   function recordMovement(id: number, input: Record<string, unknown>) {
@@ -167,22 +211,27 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
 
   function closeShift(id: number, input: Record<string, unknown>) {
     const shift = openById(id);
-    const { salesCounted, purchasesCounted, transferConfirmed, nextBase } = input;
+    const { salesCounted, purchasesCounted, transferConfirmed, nextBase, countedTokens } = input;
     const note = readText(input.note, 300);
     if (!whole(salesCounted, 0, maxCash) || !whole(purchasesCounted, 0, maxCash) ||
-      !whole(transferConfirmed, 0, maxCash) || !whole(nextBase, 0, maxCash) || note === null) {
-      throw new ValidationError(400, 'Registra el efectivo contado, las transferencias verificadas y la base del próximo turno.');
+      !whole(transferConfirmed, 0, maxCash) || !whole(nextBase, 0, maxCash) ||
+      !whole(countedTokens, 0, maxTokens) || note === null) {
+      throw new ValidationError(400, 'Registra el efectivo y las fichas contadas, las transferencias verificadas y la base siguiente.');
     }
     if (nextBase > salesCounted) throw new ValidationError(400, 'La base siguiente no puede superar el efectivo contado en ventas.');
     const totals = summarize(shift);
-    if (!note && (salesCounted !== totals.salesExpected || purchasesCounted !== totals.purchasesExpected || transferConfirmed !== totals.transferExpected)) {
+    if (totals.expectedTokens === null) throw new ValidationError(409, 'Registra primero el conteo inicial de fichas de este turno.');
+    if (!note && (salesCounted !== totals.salesExpected || purchasesCounted !== totals.purchasesExpected ||
+      transferConfirmed !== totals.transferExpected || countedTokens !== totals.expectedTokens)) {
       throw new ValidationError(400, 'Explica las diferencias antes de cerrar el turno.');
     }
     database.prepare([
       'UPDATE cash_shifts SET closed_at = ?, sales_counted = ?, purchases_counted = ?, transfer_confirmed = ?,',
-      'next_base = ?, closing_note = ?, sales_expected = ?, purchases_expected = ?, transfer_expected = ?, pending_balance = ? WHERE id = ?',
+      'next_base = ?, closing_note = ?, sales_expected = ?, purchases_expected = ?, transfer_expected = ?, pending_balance = ?,',
+      'counted_tokens = ?, expected_tokens = ? WHERE id = ?',
     ].join(' ')).run(new Date().toISOString(), salesCounted, purchasesCounted, transferConfirmed, nextBase, note,
-      totals.salesExpected, totals.purchasesExpected, totals.transferExpected, totals.pendingBalance, id);
+      totals.salesExpected, totals.purchasesExpected, totals.transferExpected, totals.pendingBalance,
+      countedTokens, totals.expectedTokens, id);
     return id;
   }
 
@@ -215,7 +264,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
       if (request.method === 'GET' && path === '/api/cash') {
         const id = activeShiftId(database);
         const recent = database.prepare(shiftSelect + ' WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 30').all();
-        return sendJson(response, 200, { active: id === null ? null : describe(id), previousBase: mostRecentBase(), recent });
+        return sendJson(response, 200, { active: id === null ? null : describe(id), ...previousClose(), recent });
       }
       if (request.method === 'GET') {
         const match = /^\/api\/cash\/([1-9]\d*)$/.exec(path);
@@ -229,10 +278,14 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
       let action: () => number;
       if (path === '/api/cash') action = () => openShift(fields);
       else {
-        const match = /^\/api\/cash\/([1-9]\d*)\/(movements|close)$/.exec(path);
+        const match = /^\/api\/cash\/([1-9]\d*)\/(movements|close|opening-tokens)$/.exec(path);
         if (!match || !whole(Number(match[1]), 1, Number.MAX_SAFE_INTEGER)) throw new ValidationError(404, 'Ruta de caja no encontrada.');
         const id = Number(match[1]);
-        action = match[2] === 'close' ? () => closeShift(id, fields) : () => recordMovement(id, fields);
+        switch (match[2]) {
+          case 'close': action = () => closeShift(id, fields); break;
+          case 'opening-tokens': action = () => recordOpeningTokens(id, fields); break;
+          default: action = () => recordMovement(id, fields);
+        }
       }
       const result = accounts.writeOnce(requestId, JSON.stringify([path, fields]), action);
       return sendJson(response, result.repeated ? 200 : 201, result);

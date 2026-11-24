@@ -9,7 +9,7 @@ test('separa las canchas y registra cada chico y canje una sola vez', { timeout:
   const { start, stop, json, cleanup, openShift } = await testServer();
   t.after(cleanup);
   await start();
-  await openShift();
+  const shift = await openShift();
   const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
   const antonio = await json('/api/accounts', 201, 'POST', { name: 'Antonio' });
   const beatriz = await json('/api/accounts', 201, 'POST', { name: 'Beatriz' });
@@ -87,10 +87,26 @@ test('separa las canchas y registra cada chico y canje una sola vez', { timeout:
   assert.equal(cash.tokensRedeemed, 3);
   assert.equal(cash.tokensReceived, 3);
   assert.equal(cash.tokenAmount, 9000);
+  assert.equal(cash.expectedTokens, 100);
   assert.deepEqual(overview.physicalRedemptions.map(({ subtotal, extra }) => [subtotal, extra]), [[6000, 2000], [4000, 0], [3000, 0]]);
   const closedLargo = overview.recent.find(({ id }) => id === largo.id);
   assert.equal(closedLargo.rounds[0].benefits.find((item) => item.accountId === antonio.id).redemption.extra, 2000);
   assert.deepEqual((await json(catalog + '/' + premium.productId + '/movements', 200)).map((row) => row.units), [-1, -1, 5]);
   assert.equal((await json(account, 200)).account.balance, 2000);
+  const close = {
+    salesCounted: cash.salesExpected, purchasesCounted: cash.purchasesExpected,
+    transferConfirmed: cash.transferExpected, nextBase: 100_000, countedTokens: 98, note: '',
+  };
+  const cashPath = '/api/cash/' + shift.id;
+  await post(cashPath + '/close', 400, close);
+  await post(cashPath + '/close', 201, { ...close, note: 'El conteo físico quedó corto por dos fichas.' });
+  const closed = await json(cashPath, 200);
+  assert.equal(closed.shift.openingTokens, 100);
+  assert.equal(closed.shift.countedTokens, 98);
+  assert.equal(closed.totals.tokenDifference, -2);
+  assert.equal((await json('/api/cash', 200)).previousTokens, 98);
+  await post('/api/cash', 400, { cashier: 'Siguiente', openingBase: 100_000, openingTokens: 100, note: '' });
+  const nextShift = await openShift(100_000, 98);
+  assert.equal((await json('/api/cash/' + nextShift.id, 200)).totals.expectedTokens, 98);
   await post('/api/tejo', 201, opening);
 });

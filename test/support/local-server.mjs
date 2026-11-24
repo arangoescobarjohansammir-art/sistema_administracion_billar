@@ -57,9 +57,9 @@ export async function testServer() {
 
   return {
     start, stop, fetch: fetchLocal, json, databasePath,
-    openShift(openingBase = 100_000) {
+    openShift(openingBase = 100_000, openingTokens = 100) {
       return json('/api/cash', 201, 'POST', {
-        requestId: randomUUID(), cashier: 'Cajero de prueba', openingBase, note: '',
+        requestId: randomUUID(), cashier: 'Cajero de prueba', openingBase, openingTokens, note: '',
       });
     },
     async cleanup() {
