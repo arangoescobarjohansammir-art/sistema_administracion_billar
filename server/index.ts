@@ -4,6 +4,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname, extname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { createCatalog } from './catalog.js';
+import { readJson, sendJson } from './http.js';
 
 const host = '127.0.0.1';
 const port = Number(process.env.PORT ?? 4173);
@@ -21,38 +23,7 @@ database.exec(`
   ) STRICT
 `);
 
-function sendJson(response: ServerResponse, status: number, value: unknown) {
-  response.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-  });
-  response.end(JSON.stringify(value));
-}
-
-async function readText(request: IncomingMessage): Promise<string | null> {
-  if (request.headers['content-type']?.split(';')[0] !== 'application/json') return null;
-
-  let body = '';
-  let oversized = false;
-  request.setEncoding('utf8');
-  for await (const chunk of request) {
-    if (oversized) continue;
-    if (body.length + chunk.length > 4096) oversized = true;
-    else body += chunk;
-  }
-  if (oversized) return null;
-
-  try {
-    const value: unknown = JSON.parse(body);
-    if (value && typeof value === 'object' && 'text' in value &&
-      typeof value.text === 'string' && value.text.length <= 500) {
-      return value.text.trim();
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
+const handleCatalog = createCatalog(database);
 
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -61,24 +32,32 @@ const contentTypes: Record<string, string> = {
 };
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse) {
-  const allowedHosts = [`${host}:${port}`, `localhost:${port}`];
+  const addressPort = request.socket.localPort;
+  const allowedHosts = [`${host}:${addressPort}`, `localhost:${addressPort}`];
   if (!request.headers.host || !allowedHosts.includes(request.headers.host)) {
     return sendJson(response, 403, { error: 'La caja solo acepta conexiones locales.' });
   }
 
   const path = new URL(request.url ?? '/', `http://${host}`).pathname;
+  const origin = request.headers.origin;
+  if (request.method !== 'GET' && origin &&
+    !allowedHosts.some((allowed) => origin === `http://${allowed}`)) {
+    return sendJson(response, 403, { error: 'Origen no autorizado.' });
+  }
+  if (path === '/api/products' || path.startsWith('/api/products/')) {
+    return handleCatalog(request, response, path);
+  }
   if (path === '/api/local-note') {
     if (request.method === 'GET') {
       const note = database.prepare('SELECT text, updated_at AS updatedAt FROM local_note WHERE id = 1').get();
       return sendJson(response, 200, note ?? { text: '', updatedAt: null });
     }
     if (request.method === 'PUT') {
-      const origin = request.headers.origin;
-      if (origin && !allowedHosts.some((allowed) => origin === `http://${allowed}`)) {
-        return sendJson(response, 403, { error: 'Origen no autorizado.' });
+      const input = await readJson(request);
+      if (typeof input?.text !== 'string' || input.text.length > 500) {
+        return sendJson(response, 400, { error: 'Escribe hasta 500 caracteres.' });
       }
-      const text = await readText(request);
-      if (text === null) return sendJson(response, 400, { error: 'Escribe hasta 500 caracteres.' });
+      const text = input.text.trim();
       const updatedAt = new Date().toISOString();
       database.prepare(`
         INSERT INTO local_note (id, text, updated_at) VALUES (1, ?, ?)
@@ -105,12 +84,14 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 }
 
-createServer((request, response) => {
+const server = createServer((request, response) => {
   void handleRequest(request, response).catch((error: unknown) => {
     console.error(error);
     if (!response.headersSent) sendJson(response, 500, { error: 'Error al acceder a la caja local.' });
     else response.end();
   });
-}).listen(port, host, () => {
-  console.log(`Caja local en http://${host}:${port}`);
+});
+server.listen(port, host, () => {
+  const address = server.address();
+  if (address && typeof address === 'object') console.log(`Caja local en http://${host}:${address.port}`);
 });

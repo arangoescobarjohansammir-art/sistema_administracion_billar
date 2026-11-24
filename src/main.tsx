@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Catalog } from './Catalog';
 import './style.css';
 
 type LocalNote = { text: string; updatedAt: string | null };
@@ -10,7 +11,7 @@ async function getNote(options?: RequestInit): Promise<LocalNote> {
   return response.json() as Promise<LocalNote>;
 }
 
-function App() {
+function LocalNoteForm() {
   const [draft, setDraft] = useState('');
   const [saved, setSaved] = useState<LocalNote | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,8 +61,6 @@ function App() {
   else if (saved.updatedAt) status = 'Guardada en este computador.';
 
   return (
-    <main>
-      <header><p>Caja local</p><h1>Tejo y billar</h1></header>
       <form onSubmit={save}>
         <h2>Nota de caja</h2>
         <label htmlFor="note">Observación</label>
@@ -76,6 +75,23 @@ function App() {
             </button>
           : <button type="button" disabled={loading} onClick={() => void load()}>Volver a cargar</button>}
       </form>
+  );
+}
+
+function App() {
+  const [section, setSection] = useState<'catalog' | 'note'>('catalog');
+
+  return (
+    <main>
+      <header>
+        <p>Caja local</p>
+        <h1>Tejo y billar</h1>
+        <nav className="actions" aria-label="Secciones de caja">
+          <button className="navigation" aria-pressed={section === 'catalog'} onClick={() => setSection('catalog')}>Inventario</button>
+          <button className="navigation" aria-pressed={section === 'note'} onClick={() => setSection('note')}>Nota de caja</button>
+        </nav>
+      </header>
+      {section === 'catalog' ? <Catalog /> : <LocalNoteForm />}
     </main>
   );
 }

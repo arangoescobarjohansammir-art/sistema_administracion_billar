@@ -4,7 +4,7 @@ Proyecto de portafolio para administrar un establecimiento con seis mesas de bil
 
 ## Estado
 
-La aplicación local ya permite guardar y recuperar una nota de caja. Este primer recorrido comprueba que la interfaz y SQLite funcionan en el computador antes de incorporar productos y cobros.
+La aplicación local permite guardar una nota de caja y administrar el catálogo y sus existencias. Crea productos con foto, registra compras por empaque o unidad, consulta los movimientos y desactiva productos que ya no vendes.
 
 ## Ejecutar en el computador
 
@@ -18,7 +18,11 @@ npm start
 
 Abre <http://127.0.0.1:4173>. La instalación inicial de dependencias requiere internet. Una vez compilada, la aplicación usa archivos y datos locales y se inicia con `npm start`.
 
-Para comprobar la persistencia, guarda una nota de ejemplo, detén el servidor con Ctrl+C y vuelve a iniciarlo. La nota debe aparecer al recargar la página. La base se crea en `data/caja.sqlite`. Supabase se incorporará con el panel remoto.
+Para probar el inventario, crea una cerveza con un empaque «Canasta» de 30 unidades. Registra una entrada de 2 canastas: las existencias deben subir a 60. Registra después una salida manual de 1 unidad con su motivo: deben quedar 59.
+
+Ejecuta `npm test` para compilar y comprobar automáticamente la conversión por empaque, el historial, las fotos y la persistencia después de reiniciar. La prueba usa una base temporal.
+
+La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo. Supabase se incorporará con el panel remoto.
 
 ## Arquitectura propuesta
 
@@ -39,9 +43,10 @@ La caja será el origen de los datos. El envío a Supabase se hará en segundo p
 
 1. Documentar las reglas y los casos de aceptación.
 2. Preparar el proyecto local, conectar SQLite y comprobar que guarda datos sin internet.
-3. Implementar catálogo, fotos, inventario, cuentas por nombre y cobros.
-4. Incorporar el cronómetro y los repartos de billar, y los chicos y canjes de tejo.
-5. Implementar apertura, movimientos, cuadre y cierre de los fondos de caja.
-6. Sincronizar con Supabase, crear el panel del administrador y preparar una demostración con datos ficticios.
+3. Implementar catálogo, fotos e inventario.
+4. Implementar cuentas por nombre y cobros.
+5. Incorporar el cronómetro y los repartos de billar, y los chicos y canjes de tejo.
+6. Implementar apertura, movimientos, cuadre y cierre de los fondos de caja.
+7. Sincronizar con Supabase, crear el panel del administrador y preparar una demostración con datos ficticios.
 
 El repositorio de portafolio usará datos ficticios. La base de datos del negocio, fotos cargadas por el cajero, credenciales, respaldos y archivos de exportación se guardarán fuera del código versionado.
