@@ -1,0 +1,33 @@
+# Caja para tejo y billar
+
+Proyecto de portafolio para administrar un establecimiento con seis mesas de billar, tejo y venta de productos. Un cajero registra las operaciones en el computador del negocio. El administrador tendrá un panel de consulta desde el celular.
+
+## Estado
+
+Primer hito: reglas del negocio y casos de aceptación. Las pantallas y la base de datos se implementarán en los siguientes hitos.
+
+## Arquitectura propuesta
+
+| Componente | Tecnología | Responsabilidad |
+| --- | --- | --- |
+| Interfaz de caja | React, Vite y TypeScript | Abrir cuentas, registrar pedidos y operar el cierre desde el navegador del computador. |
+| Aplicación local | Node.js y TypeScript | Servir la interfaz, validar operaciones y guardar los movimientos. |
+| Datos locales | SQLite | Mantener cuentas abiertas, inventario, cobros y cierres aunque no haya internet. |
+| Panel del administrador | React y Supabase | Consultar desde el celular los datos ya sincronizados. Supabase alojará la copia para consulta y gestionará el acceso del administrador. |
+
+La caja será el origen de los datos. El envío a Supabase se hará en segundo plano y podrá reintentarse sin duplicar movimientos. El panel deberá mostrar la hora de la última sincronización para indicar hasta cuándo están actualizadas las cifras. Las fotos necesarias en caja se almacenarán localmente.
+
+## Documentación
+
+- [Reglas del negocio y casos de aceptación](docs/reglas-del-negocio.md)
+
+## Hitos
+
+1. Documentar las reglas y los casos de aceptación.
+2. Preparar el proyecto local, conectar SQLite y comprobar que guarda datos sin internet.
+3. Implementar catálogo, fotos, inventario, cuentas por nombre y cobros.
+4. Incorporar el cronómetro y los repartos de billar, y los chicos y canjes de tejo.
+5. Implementar apertura, movimientos, cuadre y cierre de los fondos de caja.
+6. Sincronizar con Supabase, crear el panel del administrador y preparar una demostración con datos ficticios.
+
+El repositorio de portafolio usará datos ficticios. La base de datos del negocio, fotos cargadas por el cajero, credenciales, respaldos y archivos de exportación se guardarán fuera del código versionado.
