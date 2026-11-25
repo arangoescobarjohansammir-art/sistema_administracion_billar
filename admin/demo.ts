@@ -28,6 +28,12 @@ export function demoSnapshot(now = new Date()): AdminSnapshot {
   return {
     version: 1, day, daily: days, active: shift(18, 0, false),
     closures: [shift(17, 1, true, -1500), shift(16, 2, true), shift(15, 3, true)],
+    unexpectedWithdrawals: [
+      { id: 2, shiftId: 18, kind: 'sales_expense', amount: 24_000, category: 'Bebidas', reason: 'Compra imprevista de gaseosas',
+        createdAt: new Date(now.getTime() - 35 * 60_000).toISOString() },
+      { id: 1, shiftId: 17, kind: 'sales_withdrawal', amount: 12_000, category: 'Mantenimiento', reason: 'Cambio de un bombillo',
+        createdAt: days.at(-2)!.day + 'T20:15:00.000Z' },
+    ],
     pendingBalance: 78_000,
     openBalances: [
       { id: 1, name: 'Cliente de ejemplo 1', balance: 45_000 },

@@ -1,7 +1,8 @@
 import { createClient, type Session } from '@supabase/supabase-js';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { adminSnapshotId, clubDay, clubTimeZone, dashboardRefreshMs, type AdminSnapshot, type RegisterSummary } from '../shared/admin';
+import { adminSnapshotId, alertPeriodStart, clubDay, clubTimeZone, dashboardRefreshMs, syncWarningMs,
+  type AdminSnapshot, type RegisterSummary } from '../shared/admin';
 import { billiardTables } from '../shared/billiard';
 import { courtLabel, tejoCourtsPerType } from '../shared/tejo';
 import { demoSnapshot } from './demo';
@@ -22,8 +23,8 @@ const formatTime = (value: string) => dateTime.format(new Date(value));
 const count = (value: number | null) => value === null ? '—' : String(value);
 
 type CloudSnapshot = { payload: AdminSnapshot; synced_at: string };
-type Tab = 'Ventas' | 'Caja' | 'Juegos' | 'Inventario';
-const tabs: Tab[] = ['Ventas', 'Caja', 'Juegos', 'Inventario'];
+type Tab = 'Alertas' | 'Ventas' | 'Caja' | 'Juegos' | 'Inventario';
+const tabs: Tab[] = ['Alertas', 'Ventas', 'Caja', 'Juegos', 'Inventario'];
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return <div className="stat"><dt>{label}</dt><dd>{children}</dd></div>;
@@ -88,6 +89,70 @@ function difference(value: number | null, format: (amount: number) => string) {
   return (value < 0 ? 'Faltan ' : 'Sobran ') + format(Math.abs(value));
 }
 
+function closureDifferences(shift: RegisterSummary) {
+  const amounts = [
+    { label: 'Caja de ventas', value: shift.salesDifference, format: money },
+    { label: 'Fondo para compras', value: shift.purchasesDifference, format: money },
+    { label: 'Transferencias', value: shift.transferDifference, format: money },
+    { label: 'Fichas', value: shift.tokenDifference, format: count },
+  ];
+  return amounts.filter(({ value }) => value !== null && value !== 0);
+}
+
+function Alerts({ data, openClosure, openInventory }: {
+  data: AdminSnapshot; openClosure: (id: number) => void; openInventory: () => void;
+}) {
+  const start = alertPeriodStart(data.day).getTime();
+  const recentClosures = data.closures.flatMap((shift) => {
+    const discrepancies = closureDifferences(shift);
+    return shift.closedAt && Date.parse(shift.closedAt) >= start && discrepancies.length
+      ? [{ ...shift, closedAt: shift.closedAt, discrepancies }] : [];
+  });
+  const withdrawals = data.unexpectedWithdrawals;
+  const soldOut = data.inventory.filter((item) => item.stock <= 0);
+
+  return <div className="alert-panels">
+    <section className="panel">
+      <div className="section-title"><h2>Cierres con diferencias</h2>
+        <span className="alert-total">{recentClosures.length}</span></div>
+      {recentClosures.length === 0 ? <p className="muted">Sin diferencias en los últimos 7 días registrados.</p> :
+        <ul className="alert-list">{recentClosures.map((shift) => <li key={shift.id}>
+          <strong>Turno #{shift.id}</strong>
+          <small>{formatTime(shift.closedAt)} · {shift.cashier}</small>
+          <ul className="alert-differences">{shift.discrepancies.map(({ label, value, format }) => (
+            <li key={label}><span>{label}</span><strong className="warning">{difference(value, format)}</strong></li>
+          ))}</ul>
+          {shift.closingNote && <p>{shift.closingNote}</p>}
+          <button type="button" onClick={() => openClosure(shift.id)}>Ver cierre #{shift.id}</button>
+        </li>)}</ul>}
+    </section>
+    <section className="panel">
+      <div className="section-title"><h2>Retiros imprevistos</h2>
+        {withdrawals && <span className="alert-total">{withdrawals.length}</span>}</div>
+      {withdrawals === undefined ? <p className="muted">Aún no se han sincronizado los datos de retiros.</p>
+        : withdrawals.length === 0 ? <p className="muted">Sin retiros imprevistos en los últimos 7 días registrados.</p>
+        : <ul className="alert-list">{withdrawals.map((entry) => <li key={entry.id}>
+          <div className="alert-line"><strong>{entry.kind === 'sales_expense' ? 'Compra o gasto imprevisto' : 'Retiro de ventas'}</strong>
+            <strong>{money(entry.amount)}</strong></div>
+          <small>{formatTime(entry.createdAt)} · Turno #{entry.shiftId}</small>
+          <p><strong>{entry.category}</strong> · {entry.reason}</p>
+        </li>)}</ul>}
+    </section>
+    <section className="panel">
+      <div className="section-title"><h2>Productos agotados</h2><span className="alert-total">{soldOut.length}</span></div>
+      {data.inventory.length === 0 ? <p className="muted">Aún no hay productos activos en el inventario.</p>
+        : soldOut.length === 0 ? <p className="muted">Todos los productos activos tienen existencias.</p>
+        : <>
+          <ul className="alert-list">{soldOut.map((item) => <li key={item.id}>
+            <strong>{item.name}</strong>
+            {(item.brand || item.presentation) && <small>{[item.brand, item.presentation].filter(Boolean).join(' · ')}</small>}
+          </li>)}</ul>
+          <button type="button" onClick={openInventory}>Ver inventario</button>
+        </>}
+    </section>
+  </div>;
+}
+
 function Register({ shift }: { shift: RegisterSummary }) {
   return <dl className="stats">
     <Stat label="Ventas del turno">{money(shift.salesTotal)}</Stat>
@@ -107,7 +172,10 @@ function Register({ shift }: { shift: RegisterSummary }) {
   </dl>;
 }
 
-function Cash({ data }: { data: AdminSnapshot }) {
+function Cash({ data, focusShift }: { data: AdminSnapshot; focusShift: number | null }) {
+  useEffect(() => {
+    if (focusShift !== null) document.querySelector<HTMLElement>('#closure-' + focusShift + ' summary')?.focus();
+  }, [focusShift]);
   return <>
     <section className="panel">
       <h2>Caja {data.active ? 'abierta' : 'cerrada'}</h2>
@@ -119,7 +187,7 @@ function Cash({ data }: { data: AdminSnapshot }) {
     <section className="panel">
       <h2>Historial de cierres</h2>
       {data.closures.length === 0 && <p className="muted">Aún no hay cierres registrados.</p>}
-      {data.closures.map((shift) => <details key={shift.id}>
+      {data.closures.map((shift) => <details key={shift.id} id={'closure-' + shift.id} open={shift.id === focusShift}>
         <summary>Turno #{shift.id} · {formatTime(shift.closedAt!)}</summary>
         <p className="muted">{shift.cashier} · Abrió {formatTime(shift.openedAt)}</p>
         <Register shift={shift} />
@@ -164,22 +232,31 @@ function Inventory({ data }: { data: AdminSnapshot }) {
 }
 
 function Dashboard({ data, updatedAt }: { data: AdminSnapshot; updatedAt?: string }) {
-  const [tab, setTab] = useState<Tab>('Ventas');
+  const [tab, setTab] = useState<Tab>('Alertas');
+  const [focusShift, setFocusShift] = useState<number | null>(null);
   const [time, setTime] = useState(Date.now);
   useEffect(() => {
-    const timer = window.setInterval(() => setTime(Date.now()), dashboardRefreshMs);
-    return () => window.clearInterval(timer);
+    const refresh = () => setTime(Date.now());
+    const timer = window.setInterval(refresh, 15_000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, []);
-  const stale = updatedAt && time - Date.parse(updatedAt) > 3 * dashboardRefreshMs;
+  const stale = updatedAt && time - Date.parse(updatedAt) >= syncWarningMs;
   return <>
-    {updatedAt && <p className={stale ? 'status warning' : 'status'} role="status">
-      {stale ? 'Datos sin actualizar desde ' : 'Última sincronización: '}{formatTime(updatedAt)}
-    </p>}
+    {updatedAt && <div className={stale ? 'status sync-late' : 'status'} role="status">
+      {stale && <strong>Sincronización atrasada</strong>}
+      <span>Última sincronización: {formatTime(updatedAt)}</span>
+    </div>}
     <nav aria-label="Secciones de administración">
-      {tabs.map((item) => <button key={item} aria-pressed={tab === item} onClick={() => setTab(item)}>{item}</button>)}
+      {tabs.map((item) => <button key={item} aria-pressed={tab === item} onClick={() => { setFocusShift(null); setTab(item); }}>{item}</button>)}
     </nav>
+    {tab === 'Alertas' && <Alerts data={data} openClosure={(id) => { setFocusShift(id); setTab('Caja'); }}
+      openInventory={() => setTab('Inventario')} />}
     {tab === 'Ventas' && <Sales data={data} />}
-    {tab === 'Caja' && <Cash data={data} />}
+    {tab === 'Caja' && <Cash data={data} focusShift={focusShift} />}
     {tab === 'Juegos' && <Games data={data} />}
     {tab === 'Inventario' && <Inventory data={data} />}
   </>;
@@ -273,7 +350,8 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(isDemo || !supabase);
   const [signOutError, setSignOutError] = useState(false);
-  const [example] = useState(() => isDemo ? demoSnapshot() : null);
+  const [example] = useState(() => isDemo
+    ? { data: demoSnapshot(), updatedAt: new Date(Date.now() - 7 * 60_000).toISOString() } : null);
   useEffect(() => {
     if (!supabase || isDemo) return;
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, current) => {
@@ -300,7 +378,7 @@ function App() {
     {signOutError && <p className="status warning" role="alert">No se pudo cerrar la sesión. Intenta de nuevo.</p>}
     {example ? <>
       <p className="status demo">Demostración · Datos ficticios</p>
-      <Dashboard data={example} />
+      <Dashboard data={example.data} updatedAt={example.updatedAt} />
     </> : !ready ? <p role="status">Verificando sesión…</p> : session
       ? <SyncedDashboard key={session.user.id} session={session} /> : <Login />}
   </main>;

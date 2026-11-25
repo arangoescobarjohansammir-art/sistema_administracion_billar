@@ -1,5 +1,5 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-import { adminSnapshotId, clubDay, dashboardRefreshMs, type AdminSnapshot, type RegisterSummary } from '../shared/admin.js';
+import { adminSnapshotId, alertPeriodStart, clubDay, dashboardRefreshMs, type AdminSnapshot, type RegisterSummary } from '../shared/admin.js';
 import type { createCash } from './cash.js';
 import type { createAccounts } from './accounts.js';
 
@@ -52,6 +52,15 @@ export function createAdminSnapshot(database: DatabaseSync, cash: Cash, accounts
     version: 1, day, daily, pendingBalance, openBalances: accounts.openBalances(),
     active: active && registerSummary(active.shift, active.totals),
     closures: closures.map(({ shift, totals }) => registerSummary(shift, totals)),
+    unexpectedWithdrawals: database.prepare(`
+      SELECT id, shift_id AS shiftId, kind, amount, category, reason, created_at AS createdAt
+      FROM cash_movements WHERE kind IN ('sales_expense', 'sales_withdrawal') AND created_at >= ? AND created_at <= ?
+      ORDER BY created_at DESC, id DESC
+    `).all(alertPeriodStart(day).toISOString(), now.toISOString()).map((row) => ({
+      id: Number(row.id), shiftId: Number(row.shiftId),
+      kind: row.kind === 'sales_expense' ? 'sales_expense' : 'sales_withdrawal', amount: Number(row.amount),
+      category: String(row.category), reason: String(row.reason), createdAt: String(row.createdAt),
+    })),
     inventory: database.prepare(`
       SELECT id, name, brand, presentation,
         COALESCE((SELECT SUM(units) FROM inventory_movements WHERE product_id = products.id), 0) AS stock

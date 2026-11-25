@@ -36,6 +36,11 @@ test('resume ventas y cobros por día colombiano y conserva el cierre guardado',
     UPDATE cash_shifts SET closed_at = '2026-11-24T05:01:00.000Z', next_base = 100000, closing_note = 'Faltante.',
       sales_counted = 109500, sales_expected = 110000, purchases_counted = 0, purchases_expected = 0,
       transfer_confirmed = 9000, transfer_expected = 9000, pending_balance = 18000, counted_tokens = 102, expected_tokens = 102;
+    INSERT INTO cash_movements VALUES
+      (1, 1, 'sales_expense', 12000, -12000, 0, 'Bebidas', 'Compra imprevista', '2026-11-18T05:00:00.000Z'),
+      (2, 1, 'sales_withdrawal', 5000, -5000, 0, 'Mantenimiento', 'Repuesto', '2026-11-24T05:00:10.000Z'),
+      (3, 1, 'purchase_expense', 8000, 0, -8000, 'Bebidas', 'Proveedor habitual', '2026-11-24T05:00:11.000Z'),
+      (4, 1, 'sales_withdrawal', 1000, -1000, 0, 'Caja', 'Fuera del período', '2026-11-18T04:59:59.999Z');
     INSERT INTO products (id, name, brand, presentation, price, package_name, units_per_package, active)
       VALUES (1, 'Cerveza de prueba', 'Ejemplo', 'Botella', 4000, '', 1, 1), (2, 'Inactivo', '', '', 0, '', 1, 0);
     INSERT INTO inventory_movements (product_id, units, reason, created_at, quantity, input_unit, units_per_input)
@@ -56,6 +61,12 @@ test('resume ventas y cobros por día colombiano y conserva el cierre guardado',
   assert.equal(snapshot.active, null);
   assert.equal(snapshot.closures[0].salesDifference, -500);
   assert.equal(snapshot.closures[0].closingNote, 'Faltante.');
+  assert.deepEqual(snapshot.unexpectedWithdrawals, [
+    { id: 2, shiftId: 1, kind: 'sales_withdrawal', amount: 5000, category: 'Mantenimiento', reason: 'Repuesto',
+      createdAt: '2026-11-24T05:00:10.000Z' },
+    { id: 1, shiftId: 1, kind: 'sales_expense', amount: 12000, category: 'Bebidas', reason: 'Compra imprevista',
+      createdAt: '2026-11-18T05:00:00.000Z' },
+  ]);
   assert.deepEqual(snapshot.openBalances, [{ id: 1, name: 'Cliente de prueba', balance: 18000 }]);
   assert.equal(snapshot.pendingBalance, 18000);
   assert.deepEqual(snapshot.inventory, [{ id: 1, name: 'Cerveza de prueba', brand: 'Ejemplo', presentation: 'Botella', stock: 12 }]);

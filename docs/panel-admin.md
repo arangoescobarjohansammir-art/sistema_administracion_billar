@@ -41,6 +41,8 @@ Para publicar la demo en GitHub Pages, abre **Settings → Pages** en un reposit
 
 El sitio se puede abrir desde cualquier red con internet. Si el computador se apaga o pierde conexión, el panel conserva en Supabase la última copia disponible con su fecha y hora. La caja se ejecuta en el computador del local y sigue siendo la fuente de los datos.
 
+Al iniciar, **Alertas** muestra los cierres con diferencias y los retiros imprevistos de los últimos siete días registrados, además de los productos activos agotados. Los retiros incluyen compras imprevistas y otros retiros de la caja de ventas. Cuando la última copia tiene tres minutos o más, el panel muestra **Sincronización atrasada** junto con la fecha y la hora de esa copia.
+
 ## Demostración del portafolio
 
 Con `npm start`, abre [el panel de demostración local](http://127.0.0.1:4173/admin/?demo=1). Para alojar solo la demostración, compila el panel sin las dos variables `VITE_SUPABASE_…` y añade `?demo=1` al enlace publicado. La demostración incluye 30 días ficticios, un turno abierto, cierres con y sin diferencias, cuentas pendientes, juegos activos y productos con diferentes existencias.

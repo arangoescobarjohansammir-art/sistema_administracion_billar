@@ -28,12 +28,23 @@ button { font-weight: 650; cursor: pointer; }
 button:disabled { opacity: .62; cursor: default; }
 button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #6a55dc; outline-offset: 2px; }
 button[aria-pressed="true"], .primary { color: #fff; background: var(--accent); border-color: var(--accent); }
-nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 14px 0; }
-nav button { padding-inline: 4px; font-size: .91rem; }
+nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; margin: 14px 0; }
+nav button { padding-inline: 2px; font-size: clamp(.7rem, 2.5vw, .91rem); }
 
 .status { margin: 0 0 10px; padding: 10px 12px; border-radius: 9px; background: #ece8fc; color: #3f298e; font-size: .9rem; }
 .demo { font-weight: 650; }
 .warning { color: #943513; }
+.sync-late { display: grid; gap: 2px; background: #fff0da; color: #853712; border: 1px solid #f2d7b0; }
+.alert-panels { display: grid; align-items: start; }
+.alert-total { padding: 2px 9px; border-radius: 9px; color: #573ca2; background: #f0ebff; font-weight: 700; }
+.alert-list > li { padding-block: 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.alert-list > li:last-child { border-bottom: 0; }
+.alert-list p { margin: 6px 0 0; }
+.alert-list small { display: block; margin-top: 3px; color: var(--muted); }
+.alert-list button, .alert-list + button { margin-top: 8px; }
+.alert-line, .alert-differences li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.alert-differences { margin-top: 5px; }
+.alert-differences li { font-size: .9rem; }
 .refresh { display: flex; justify-content: flex-end; margin-bottom: 10px; }
 
 .panel { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: clamp(13px, 3vw, 23px); margin-bottom: 12px; }
@@ -68,6 +79,7 @@ details[open] { padding-bottom: 12px; }
 .login form { gap: 14px; margin: 18px 0; }
 .login a { display: inline-block; padding-block: 12px; }
 @media (min-width: 700px) {
+  .alert-panels { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .chart-row { grid-template-columns: 108px 1fr 120px; }
   .chart-row strong { text-align: end; }

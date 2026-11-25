@@ -1,6 +1,12 @@
 export const adminSnapshotId = 'club-patio-bonito';
 export const dashboardRefreshMs = 60_000;
 export const clubTimeZone = 'America/Bogota';
+export const syncWarningMs = 3 * dashboardRefreshMs;
+
+export type UnexpectedWithdrawal = {
+  id: number; shiftId: number; kind: 'sales_expense' | 'sales_withdrawal';
+  amount: number; category: string; reason: string; createdAt: string;
+};
 
 export type DailySales = {
   day: string; sales: number; transactions: number;
@@ -25,6 +31,7 @@ export type AdminSnapshot = {
   pendingBalance: number;
   openBalances: { id: number; name: string; balance: number }[];
   inventory: { id: number; name: string; brand: string; presentation: string; stock: number }[];
+  unexpectedWithdrawals?: UnexpectedWithdrawal[];
   play: {
     billiard: { table: number; paused: boolean }[];
     tejo: { type: 'maxi' | 'largo'; court: number; rounds: number }[];
@@ -37,4 +44,8 @@ const dateInColombia = new Intl.DateTimeFormat('en-CA', {
 
 export function clubDay(date: Date) {
   return dateInColombia.format(date);
+}
+
+export function alertPeriodStart(day: string) {
+  return new Date(Date.parse(day + 'T05:00:00.000Z') - 6 * 86_400_000);
 }
