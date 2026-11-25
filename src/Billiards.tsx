@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { accountTokenValue, cashChange, mixedCreditPlan } from '../shared/tender';
 import { CashChangeField } from './CashTools';
 import { AccountPicker } from './CustomerLookup';
+import { ConsumptionProducts, ProductLookup } from './ProductPicker';
 import { billiardTables, durationLabel, elapsedSeconds, timeCharge } from '../shared/billiard';
 import { api, emptyPayment, label, message, MixedCreditField, money, PaymentFields, TokenQuantity, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
@@ -130,14 +131,26 @@ function AddConsumption({ products, locked, onDeliver }: {
   locked: boolean;
   onDeliver: (product: Product, quantity: number) => Promise<boolean>;
 }) {
-  const [productId, setProductId] = useState('');
+  const [productId, setProductId] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const product = products.find((value) => String(value.id) === productId);
+  const quantityInput = useRef<HTMLInputElement>(null);
+  const product = products.find((value) => value.id === productId);
+  const units = Number(quantity);
+  const ready = !locked && product && Number.isInteger(units) && units >= 1 && units <= product.stock;
+
+  function choose(selected: Product) {
+    setProductId(selected.id);
+    setQuery('');
+    quantityInput.current?.focus();
+    quantityInput.current?.select();
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!product || locked) return;
-    if (await onDeliver(product, Number(quantity))) {
-      setProductId('');
+    if (!ready) return;
+    if (await onDeliver(product, units)) {
+      setProductId(null);
       setQuantity('1');
     }
   }
@@ -145,14 +158,14 @@ function AddConsumption({ products, locked, onDeliver }: {
     <form onSubmit={save}>
       <h3>Registrar consumo</h3>
       <fieldset className="field-grid" disabled={locked}>
-        <label>Producto<select value={productId} required onChange={(event) => setProductId(event.target.value)}>
-          <option value="">Seleccionar producto</option>
-          {products.map((item) => <option key={item.id} value={item.id}>{label(item)} · {money.format(item.price)}</option>)}
-        </select></label>
-        <label>Cantidad<input type="number" min={1} max={product?.stock ?? 1} step={1} required value={quantity}
+        <ProductLookup products={products} selected={product} query={query} required onChoose={choose}
+          onQueryChange={(value) => { setProductId(null); setQuery(value); }} />
+        <label>Cantidad<input ref={quantityInput} type="number" inputMode="numeric" min={1} max={product?.stock ?? 1} step={1} required value={quantity}
           onChange={(event) => setQuantity(event.target.value)} /></label>
       </fieldset>
-      {products.length ? <button disabled={locked || !product}>Registrar entrega</button> : <p>Agrega existencias en Inventario para registrar consumos.</p>}
+      {products.length > 0 && <button disabled={!ready}>Registrar entrega</button>}
+      <ConsumptionProducts key={query} products={products} query={query} action="Seleccionar" onChoose={choose}
+        unavailable={() => locked} selectedId={product?.id} />
     </form>
   );
 }

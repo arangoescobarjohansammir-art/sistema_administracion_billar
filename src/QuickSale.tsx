@@ -3,6 +3,7 @@ import { cashChange, mixedCreditPlan } from '../shared/tender';
 import { tejoProductValue } from '../shared/tejo';
 import { CashChangeField } from './CashTools';
 import { AccountPicker } from './CustomerLookup';
+import { ProductCard } from './ProductPicker';
 import { api, emptyPayment, label, message, MixedCreditField, money, PaymentBreakdown, PaymentFields, TokenQuantity, totalPayment, useOperation,
   type Account, type Payment, type PaymentInput, type Product } from './Accounts';
 
@@ -110,7 +111,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setError('');
     setMode(next);
     requestAnimationFrame(() => {
-      checkout.current?.querySelector<HTMLElement>(next === 'credit' ? '[data-customer-lookup]' : '[data-confirm-sale]')?.focus();
+      checkout.current?.querySelector<HTMLElement>(next === 'credit' ? '[data-search-lookup]' : '[data-confirm-sale]')?.focus();
     });
   }
 
@@ -216,16 +217,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
           {products.length > 0 && !visible.length && <p>No se encontraron productos.</p>}
           <div className="sale-products" ref={results}>
             {visible.map((product) => (
-              <button type="button" className="sale-product" key={product.id} disabled={locked || mode !== 'order'}
-                onClick={() => add(product)} aria-label={'Agregar ' + label(product) + ' por ' + money.format(product.price)}>
-                <span className="sale-thumb" data-tint={product.id % 4}>
-                  {product.hasPhoto ? <img src={'/api/products/' + product.id + '/photo'} alt="" loading="lazy" />
-                    : <span aria-hidden="true">{product.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span>}
-                </span>
-                <span className="sale-product-name">{product.name}</span>
-                <span className="secondary-text">{[product.brand, product.presentation].filter(Boolean).join(' · ')}</span>
-                <b>{money.format(product.price)}</b>
-              </button>
+              <ProductCard key={product.id} product={product} action="Agregar" disabled={locked || mode !== 'order'}
+                onClick={() => add(product)} />
             ))}
           </div>
         </section>

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { cashChange, mixedCreditPlan } from '../shared/tender';
 import { CashChangeField } from './CashTools';
 import { AccountPicker, CustomerLookup } from './CustomerLookup';
+import { ConsumptionProducts, ProductLookup } from './ProductPicker';
 import { courtLabel, tejoCourtsPerType, tejoProductValue, tejoTypes, type TejoType } from '../shared/tejo';
 import { api, emptyPayment, label, message, MixedCreditField, money, PaymentFields, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
@@ -18,7 +19,6 @@ type RedeemEntry = { groupId: number; roundId: number; player: Benefit; flexible
 type Overview = { active: Group[]; recent: Group[]; availableTokens: number | null };
 type Action = (path: string, payload: object, success: string) => Promise<boolean>;
 type Basket = { product: Product; quantity: number }[];
-const searchText = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
 
 function StartGroup({ locked, onStart }: { locked: boolean; onStart: (count: number) => Promise<boolean> }) {
   const [count, setCount] = useState('2');
@@ -147,13 +147,11 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
 }) {
   const [payee, setPayee] = useState('');
   const [query, setQuery] = useState('');
-  const [expanded, setExpanded] = useState(false);
   const [basket, setBasket] = useState<Basket>([]);
   const [method, setMethod] = useState<RedemptionMethod>('');
   const [mixedCredit, setMixedCredit] = useState('');
   const [payment, setPayment] = useState(emptyPayment);
   const [received, setReceived] = useState('');
-  const results = useRef<HTMLDivElement>(null);
   const allowance = tejoProductValue;
   const subtotal = basket.reduce((sum, { product, quantity }) => sum + product.price * quantity, 0);
   const extra = Math.max(0, subtotal - allowance);
@@ -171,8 +169,10 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
     (extra === 0 || (Boolean(method) && remaining >= 0 && (remaining === 0 || Boolean(payee) || knownPlayer) &&
       (method !== 'mixed' || plan.valid) &&
       (methods.cash <= 0 || change === null || (Number.isInteger(change) && change >= 0))));
-  const matches = products.filter((product) => searchText(label(product)).includes(searchText(query.trim())));
-  const visible = expanded ? matches : matches.slice(0, 12);
+  function unavailable(product: Product) {
+    const current = basket.find((item) => item.product.id === product.id);
+    return (current?.quantity ?? 0) >= product.stock || (!current && basket.length >= 50);
+  }
 
   function add(product: Product) {
     setBasket((previous) => previous.some(({ product: item }) => item.id === product.id)
@@ -197,29 +197,10 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
         <p className="secondary-text">Este chico cubre hasta <strong>{money.format(allowance)}</strong> en productos para {entry.player.name}.</p>
         <section className="redemption-step" aria-labelledby="redeem-products">
           <h4 id="redeem-products">Productos que lleva</h4>
-          <label>Buscar producto<input type="search" data-key-search autoFocus value={query}
-            placeholder="Busca por nombre, marca o presentación" onChange={(event) => { setQuery(event.target.value); setExpanded(false); }}
-            onKeyDown={(event) => {
-              if (event.key !== 'ArrowDown' && event.key !== 'Enter') return;
-              event.preventDefault();
-              results.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
-            }} /></label>
-          {!products.length && <p>Agrega existencias en Inventario para poder canjear productos.</p>}
-          {products.length > 0 && !matches.length && <p>No se encontraron productos.</p>}
-          <div className="sale-products redemption-products" ref={results}>
-            {visible.map((product) => {
-              const current = basket.find((item) => item.product.id === product.id);
-              return <button className="sale-product" key={product.id} type="button"
-                disabled={(current?.quantity ?? 0) >= product.stock || (!current && basket.length >= 50)}
-                aria-label={'Agregar ' + label(product) + ' por ' + money.format(product.price)} onClick={() => add(product)}>
-                <strong className="sale-product-name">{product.name}</strong>
-                <span className="secondary-text">{[product.brand, product.presentation].filter(Boolean).join(' · ')}</span>
-                <b>{money.format(product.price)}</b>
-              </button>;
-            })}
-          </div>
-          {!expanded && matches.length > visible.length && <button type="button" className="secondary space-above"
-            onClick={() => setExpanded(true)}>Ver los {matches.length} productos</button>}
+          <ProductLookup products={products.filter((product) => !unavailable(product))} query={query} autoFocus
+            onQueryChange={setQuery} onChoose={add} />
+          <ConsumptionProducts key={query} products={products} query={query} action="Agregar" onChoose={add}
+            unavailable={unavailable} />
           {basket.length > 0 && <ul className="cart-list">{basket.map(({ product, quantity }) => (
             <li key={product.id}>
               <div><strong>{label(product)}</strong><p>{money.format(product.price * quantity)}</p></div>

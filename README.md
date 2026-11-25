@@ -14,6 +14,8 @@ En **Venta → Cobrar**, cada ficha cubre hasta $4.000 en productos tanto en **F
 
 El encabezado de la app mantiene visible la fecha y la hora de Colombia.
 
+Al **registrar consumo** en Billar o Tejo, elige un producto desde su tarjeta con foto, nombre y precio, o escribe parte de su nombre en **Buscar producto**. Las opciones se filtran desde la primera letra y puedes elegir con el mouse o con **↓** y **Enter**. En Billar, elige la cantidad y confirma la entrega. En Tejo, el producto se agrega a la lista del chico para revisar antes de confirmar.
+
 ## Usuarios y correcciones
 
 En el primer acceso a la caja, el administrador crea su usuario local con una contraseña de al menos diez caracteres. Esta cuenta se usa en el computador de caja y sus datos de acceso son independientes del panel móvil. En **Personal → Usuarios**, el administrador puede crear usuarios de cajero con PIN de seis dígitos, cambiar sus PIN y desactivar su acceso. Cada persona inicia sesión con su propia cuenta.
