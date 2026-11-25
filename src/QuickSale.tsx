@@ -9,13 +9,14 @@ import { api, emptyPayment, label, message, MixedCreditField, money, PaymentBrea
 
 type Item = { product: Product; quantity: number };
 type Mode = 'order' | 'cash' | 'transfer' | 'tokens' | 'mixed' | 'credit';
-type CreditPart = { accountId: string; amount: string };
+type CreditPart = { key: number; accountId: string; amount: string };
 type CreditShare = { accountId: number; name: string; amount: number };
 type RecentSale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number }[];
   payment: Payment | null; creditShares: CreditShare[] };
 type RecentRedemption = { id: number; tokens: number; subtotal: number; extra: number; name: string | null;
   createdAt: string; items: { label: string; quantity: number }[]; creditShares: CreditShare[] };
-const emptyCreditParts = (): CreditPart[] => [{ accountId: '', amount: '' }, { accountId: '', amount: '' }];
+const emptyCreditPart = (key: number): CreditPart => ({ key, accountId: '', amount: '' });
+const emptyCreditParts = () => [emptyCreditPart(1), emptyCreditPart(2)];
 const normalize = (name: string) => name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
 const time = new Intl.DateTimeFormat('es-CO', { timeStyle: 'short', timeZone: 'America/Bogota' });
 const paymentOptions = [
@@ -37,6 +38,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const [mixedCredit, setMixedCredit] = useState('');
   const [splitCredit, setSplitCredit] = useState(false);
   const [creditParts, setCreditParts] = useState(emptyCreditParts);
+  const nextCreditPart = useRef(3);
   const [payment, setPayment] = useState<PaymentInput>(emptyPayment);
   const [received, setReceived] = useState('');
   const [error, setError] = useState('');
@@ -80,7 +82,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const remaining = due - totalPayment(methods);
   const splitActive = mode === 'mixed' && splitCredit;
   const partsTotal = creditParts.reduce((sum, part) => sum + Number(part.amount), 0);
-  const duplicateAccounts = Boolean(creditParts[0].accountId) && creditParts[0].accountId === creditParts[1].accountId;
+  const selectedAccounts = creditParts.map((part) => part.accountId).filter(Boolean);
+  const duplicateAccounts = new Set(selectedAccounts).size !== selectedAccounts.length;
   const partsReady = remaining === partsTotal && !duplicateAccounts &&
     creditParts.every(({ accountId, amount }) => accountId && Number.isSafeInteger(Number(amount)) && Number(amount) > 0);
   const accountRequired = mode === 'credit' || remaining > 0;
@@ -158,6 +161,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setMixedCredit('');
     setSplitCredit(false);
     setCreditParts(emptyCreditParts());
+    nextCreditPart.current = 3;
     setMode('order');
   }
 
@@ -177,8 +181,16 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     chooseMethod('mixed');
   }
 
-  function updateCreditPart(index: number, fields: Partial<CreditPart>) {
-    setCreditParts((previous) => previous.map((part, position) => position === index ? { ...part, ...fields } : part));
+  function updateCreditPart(key: number, fields: Partial<CreditPart>) {
+    setCreditParts((previous) => previous.map((part) => part.key === key ? { ...part, ...fields } : part));
+  }
+
+  function addCreditPart() {
+    const key = nextCreditPart.current++;
+    setCreditParts((previous) => [...previous, emptyCreditPart(key)]);
+    requestAnimationFrame(() => checkout.current?.querySelector<HTMLInputElement>(
+      '[data-credit-part="' + key + '"] [data-search-lookup]',
+    )?.focus());
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -198,7 +210,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
         ? await write('tejo/redemptions', { ...payload, tokens })
         : await write('sales', payload);
       reset();
-      const summary = remaining > 0 ? (splitActive ? 'Fiado repartido en dos cuentas: ' : 'Saldo fiado: ') + money.format(remaining)
+      const summary = remaining > 0 ? (splitActive ? 'Fiado repartido en ' + creditParts.length + ' cuentas: ' : 'Saldo fiado: ') + money.format(remaining)
         : productRedemption ? 'Cubierto con fichas: ' + money.format(coveredProducts) + ' · Cobrado: ' + money.format(due)
           : 'Total: ' + money.format(total);
       setStatus((productRedemption ? 'Canje #' + receipt.id + ' guardado. ' : 'Venta #' + receipt.id + ' guardada. ') + summary +
@@ -286,23 +298,27 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
               {mode === 'mixed' && <PaymentFields value={payment} onChange={setPayment} showTokens={false} />}
               {mode === 'mixed' && (remaining > 0 || splitActive) && <button type="button" className="secondary"
                 onClick={() => setSplitCredit((value) => !value)}>
-                {splitActive ? 'Usar una sola cuenta' : 'Repartir fiado en dos cuentas'}
+                {splitActive ? 'Usar una sola cuenta' : 'Repartir fiado entre personas'}
               </button>}
               {mode === 'mixed' && !splitActive && <MixedCreditField remaining={remaining} amount={mixedCredit} onChange={setMixedCredit}
                 hasAccount={Boolean(accountId)} />}
               {splitActive ? <fieldset className="sale-tender">
-                <legend>Fiado en dos cuentas</legend>
+                <legend>Fiado repartido</legend>
                 <p>Saldo por repartir: <strong>{money.format(Math.max(remaining, 0))}</strong></p>
-                {creditParts.map((part, index) => <div className="field-grid" key={index}>
+                {creditParts.map((part, index) => <div className="credit-share" key={part.key} data-credit-part={part.key}>
                   <AccountPicker accounts={accounts} label={'Cuenta ' + (index + 1)} value={part.accountId} required
-                    onChange={(accountId) => updateCreditPart(index, { accountId })} />
+                    onChange={(accountId) => updateCreditPart(part.key, { accountId })} />
                   <label>Fiado cuenta {index + 1} (COP)<input type="number" inputMode="numeric" min={1} step={1} required
-                    value={part.amount} onChange={(event) => updateCreditPart(index, { amount: event.target.value })} /></label>
+                    value={part.amount} onChange={(event) => updateCreditPart(part.key, { amount: event.target.value })} /></label>
+                  {creditParts.length > 2 && <button type="button" className="secondary" aria-label={'Quitar cuenta ' + (index + 1)}
+                    onClick={() => setCreditParts((previous) => previous.filter(({ key }) => key !== part.key))}>Quitar</button>}
                 </div>)}
+                <button type="button" className="secondary" disabled={creditParts.length >= accounts.length}
+                  onClick={addCreditPart}>Agregar persona</button>
                 <div aria-live="polite">
-                  {duplicateAccounts && <p role="alert">Selecciona dos cuentas distintas.</p>}
+                  {duplicateAccounts && <p role="alert">Selecciona una cuenta distinta para cada persona.</p>}
                   {remaining > partsTotal && <p>Falta repartir <strong>{money.format(remaining - partsTotal)}</strong>.</p>}
-                  {remaining >= 0 && remaining < partsTotal && <p role="alert">Las dos partes superan el saldo fiado.</p>}
+                  {remaining >= 0 && remaining < partsTotal && <p role="alert">Las partes superan el saldo fiado.</p>}
                 </div>
               </fieldset> : <AccountPicker accounts={accounts} value={accountId} required={accountRequired} onChange={setAccountId}
                 label={'Cuenta del cliente' + (accountRequired ? '' : ' (opcional)')} />}

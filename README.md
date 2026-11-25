@@ -65,7 +65,7 @@ Para probar el fiado, crea una cuenta en **Cuentas**, luego abre **Venta** y agr
 
 En **Mixto**, usa **Fiado a la cuenta (COP)** para escribir cuánto quieres dejar pendiente. La suma de lo pagado con efectivo, transferencia y fichas, más el fiado, debe cubrir el total. Si dejas el campo vacío, se calcula con la diferencia entre el total y lo pagado. Todo saldo fiado requiere una cuenta de cliente.
 
-En **Venta → Cobrar → Mixto → Repartir fiado en dos cuentas**, elige dos clientes distintos e indica cuánto queda pendiente en cada cuenta. Por ejemplo, para una venta de $60.000 puedes dejar $40.000 y $20.000 en dos cuentas. Si también recibes dinero o fichas, reparte únicamente el saldo que falte.
+En **Venta → Cobrar → Mixto → Repartir fiado entre personas**, elige los clientes e indica cuánto queda pendiente en cada cuenta. Usa **Agregar persona** para incluir más clientes. Por ejemplo, puedes repartir una botella de $60.000 entre seis cuentas de $10.000. Si también recibes dinero o fichas, reparte únicamente el saldo que falte.
 
 En **Cuentas**, el **Historial actual** reúne los cargos, pagos y anulaciones con fecha y hora de Colombia. Si queda saldo, los movimientos siguen en ese historial aunque cambie el día o el turno. Cuando la cuenta queda en cero, se puede consultar en **Historial anterior**. El siguiente cargo inicia un ciclo nuevo para el mismo cliente.
 

@@ -6,7 +6,7 @@ import { testServer } from './support/local-server.mjs';
 
 const none = { cash: 0, transfer: 0, tokens: 0 };
 
-test('reparte el fiado de una sola compra entre dos cuentas y registra una vez el pago y los productos', { timeout: 20000 }, async (t) => {
+test('reparte el fiado de una compra entre dos o más cuentas y registra una vez el pago y los productos', { timeout: 20000 }, async (t) => {
   const server = await testServer();
   t.after(server.cleanup);
   await server.start();
@@ -58,6 +58,17 @@ test('reparte el fiado de una sola compra entre dos cuentas y registra una vez e
   assert.equal((await detail(two.id)).account.balance, 10000);
   assert.equal((await detail(two.id)).history.current.movements.at(-1).kind, 'void');
   assert.deepEqual((await server.json(movement, 200)).map(({ units }) => units), [1, -1, -1, 4]);
+
+  const buyers = [one, two];
+  for (const name of ['Eva', 'Mario', 'Rosa', 'Sofía']) buyers.push(await post('/api/accounts', 201, { name }));
+  const split = [5000, 7000, 8000, 10000, 14000, 16000];
+  const purchase = { ...sale, requestId: randomUUID(), creditShares: buyers.map((buyer, index) => ({ accountId: buyer.id, amount: split[index] })) };
+  const sold = await post('/api/sales', 201, purchase);
+  assert.equal((await post('/api/sales', 200, purchase)).id, sold.id);
+  const verified = await Promise.all(buyers.map((buyer) => detail(buyer.id)));
+  assert.deepEqual(verified.map(({ history }) => history.current.movements.at(-1).amount), split);
+  assert.deepEqual((await server.json(movement, 200)).map(({ units }) => units), [-1, 1, -1, -1, 4]);
+  assert.deepEqual(await totals().then(({ salesCount, salesTotal }) => [salesCount, salesTotal]), [2, 100000]);
 });
 
 test('conserva el historial con abonos parciales, archiva al saldar y recupera movimientos antiguos', { timeout: 20000 }, async (t) => {

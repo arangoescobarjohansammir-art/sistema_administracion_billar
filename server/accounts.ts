@@ -52,8 +52,8 @@ export class ValidationError extends Error {
 
 export function creditShares(value: unknown, owner: number | null, remaining: number): CreditShare[] {
   if (value === undefined) return [];
-  if (owner !== null || !Array.isArray(value) || value.length !== 2) {
-    throw new ValidationError(400, 'Elige dos cuentas para repartir el saldo fiado.');
+  if (owner !== null || !Array.isArray(value) || value.length < 2) {
+    throw new ValidationError(400, 'Elige al menos dos cuentas para repartir el saldo fiado.');
   }
   const shares = value.map((entry) => {
     const { accountId, amount } = record(entry) ?? {};
@@ -62,8 +62,9 @@ export function creditShares(value: unknown, owner: number | null, remaining: nu
     }
     return { accountId, amount };
   });
-  if (shares[0].accountId === shares[1].accountId || shares[0].amount + shares[1].amount !== remaining) {
-    throw new ValidationError(400, 'Usa dos cuentas distintas. Sus importes deben sumar el saldo por fiar.');
+  if (new Set(shares.map((part) => part.accountId)).size !== shares.length ||
+    shares.reduce((sum, part) => sum + part.amount, 0) !== remaining) {
+    throw new ValidationError(400, 'Usa cuentas distintas. Sus importes deben sumar el saldo por fiar.');
   }
   return shares;
 }

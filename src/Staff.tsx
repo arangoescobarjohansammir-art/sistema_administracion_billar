@@ -152,7 +152,7 @@ function VoidForm({ sale, onDone, onCancel }: { sale: Sale; onDone: () => void; 
       </label>
       <label className="inline-check"><input type="checkbox" name="confirmed" required />
         {sale.cash || sale.transfer || sale.tokens ? 'Confirmo que devolví el pago por el medio indicado o que el cobro no llegó a realizarse.'
-          : sale.creditShares.length ? 'Confirmo que corresponde retirar el cargo de ambas cuentas.'
+          : sale.creditShares.length ? 'Confirmo que corresponde retirar el cargo de las cuentas indicadas.'
             : 'Confirmo que corresponde retirar este cargo de la cuenta.'}</label>
     </fieldset>
     {error && <p role="alert">{error}</p>}

@@ -257,6 +257,10 @@ kbd { display: inline-block; padding: 0.08rem 0.32rem; border: 1px solid var(--c
 .quantity-controls .quantity-input { width: 4.1rem; margin: 0; padding: 0.39rem 0.15rem; text-align: center; }
 .sale-tender, .bill-counter { border: 1px solid var(--line); border-radius: 0.6rem; background: var(--paper); padding: 0.65rem; margin: 0.65rem 0; }
 .sale-tender .row-between { color: var(--accent-ink); }
+fieldset.sale-tender { min-width: 0; }
+.credit-share { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 0.4rem 0.6rem; align-items: end; margin-bottom: 0.8rem; }
+.credit-share > .search-lookup, .credit-share > label { margin-bottom: 0; }
+.credit-share > button { justify-self: start; }
 .space-above { margin-top: 0.75rem; }
 .bill-counter summary { cursor: pointer; font-weight: 750; }
 .bill-count-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: 0.5rem; margin-top: 0.65rem; }
