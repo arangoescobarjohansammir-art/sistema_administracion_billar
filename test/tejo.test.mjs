@@ -5,6 +5,56 @@ import { testServer } from './support/local-server.mjs';
 
 const noPayment = { cash: 0, transfer: 0, tokens: 0 };
 
+test('reparte los chicos pendientes entre los integrantes del equipo perdedor', { timeout: 20000 }, async (t) => {
+  const { start, stop, json, cleanup, openShift } = await testServer();
+  t.after(cleanup);
+  await start();
+  await openShift();
+  const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
+  const byId = async (id) => (await json('/api/tejo', 200)).active.find((group) => group.id === id);
+  await post('/api/tejo', 400, { courtType: 'maxi', courtNumber: 1, playerCount: 5, teamSize: 2 });
+  for (const size of [2, 3, 4]) {
+    const { id } = await post('/api/tejo', 201, { courtType: 'maxi', courtNumber: size, playerCount: size * 2, teamSize: size });
+    const path = '/api/tejo/' + id;
+    await post(path + '/guest', 409, {});
+    await post(path + '/record', 201, { issueAll: true });
+    await post(path + '/record', 201, { issueAll: true });
+    let group = await byId(id);
+    assert.equal(group.teamSize, size);
+    assert.equal(group.rounds[0].total, size * 8000);
+    assert.equal(group.rounds[0].benefits.filter(({ issuedAt }) => issuedAt).length, size * 2);
+    await post(path + '/close', 409, {});
+    const names = (team) => group.players.slice(team === 'A' ? 0 : size, team === 'A' ? size : undefined)
+      .map(({ id: playerId }, index) => ({ playerId, name: 'Mesa ' + size + ' equipo ' + team + ' jugador ' + (index + 1) }));
+    const teamA = { team: 'A', count: 1, players: names('A') };
+    const teamB = { team: 'B', count: 1, players: names('B') };
+    await post(path + '/assign', 400, { losses: [{ ...teamA, players: [teamB.players[0]] }] });
+    await post(path + '/assign', 400, { losses: [teamA, { ...teamB, players: teamB.players.slice(1) }] });
+    assert.ok((await byId(id)).rounds.every(({ losingTeam, charges }) => losingTeam === null && charges.length === 0));
+    const assignment = { losses: [teamB, teamA], requestId: randomUUID() };
+    await post(path + '/assign', 201, assignment);
+    await post(path + '/assign', 200, assignment);
+    await post(path + '/assign', 400, { losses: [teamA] });
+    group = await byId(id);
+    assert.deepEqual(group.rounds.map(({ losingTeam }) => losingTeam), ['B', 'A']);
+    for (const round of group.rounds) {
+      assert.deepEqual(round.charges.map(({ name, amount }) => [name, amount]),
+        names(round.losingTeam).map(({ name }) => [name, 8000]));
+    }
+    await post(path + '/close', 201, {});
+  }
+  await stop();
+  await start();
+  const { recent } = await json('/api/tejo', 200);
+  assert.equal(recent.length, 3);
+  assert.deepEqual(recent.flatMap((group) => group.rounds.map(({ charges }) => charges.length)), [4, 4, 3, 3, 2, 2]);
+  const customers = await json('/api/accounts', 200);
+  assert.equal(customers.length, 18);
+  assert.ok(customers.every(({ balance }) => balance === 8000));
+  const { totals } = (await json('/api/cash', 200)).active;
+  assert.deepEqual([totals.salesTotal, totals.tokensIssued, totals.cashReceived], [144000, 36, 0]);
+});
+
 test('registra chicos con fichas pendientes y entrega solo las disponibles', { timeout: 20000 }, async (t) => {
   const { start, json, fetch, cleanup, openShift } = await testServer();
   t.after(cleanup);

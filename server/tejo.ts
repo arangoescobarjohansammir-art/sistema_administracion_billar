@@ -290,7 +290,8 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
       if (!input) throw new ValidationError(400, 'No se recibió una operación válida.');
       const { requestId, ...fields } = input;
       let action: () => number;
-      if (path === '/api/tejo') action = () => fields.playerCount === undefined ? start(fields) : flexible.start(fields);
+      if (path === '/api/tejo') action = () => fields.playerCount === undefined && fields.teamSize === undefined
+        ? start(fields) : flexible.start(fields);
       else if (path === '/api/tejo/redemptions') {
         const { items, payment } = itemsAndPayment(fields);
         const owner = accountId(fields.accountId);

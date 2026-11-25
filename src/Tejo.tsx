@@ -3,7 +3,7 @@ import { cashChange, mixedCreditPlan } from '../shared/tender';
 import { CashChangeField } from './CashTools';
 import { AccountPicker, CustomerLookup } from './CustomerLookup';
 import { ConsumptionProducts, ProductLookup } from './ProductPicker';
-import { courtLabel, tejoCourtsPerType, tejoProductValue, tejoTypes, type TejoType } from '../shared/tejo';
+import { courtLabel, tejoCourtsPerType, tejoProductValue, tejoTeams, tejoTypes, type TejoTeam, type TejoType } from '../shared/tejo';
 import { api, emptyPayment, label, message, MixedCreditField, money, PaymentFields, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
 
@@ -13,19 +13,36 @@ type Redemption = {
   createdAt: string; items: { label: string; quantity: number; unitPrice: number }[];
 };
 type Benefit = { accountId: number; customerId?: number | null; name: string; issuedAt: string | null; redemption: Redemption | null };
-type Round = { id: number; number: number; loser: string | null; loserId: number | null; total: number; benefits: Benefit[]; flexible?: boolean };
-type Group = { id: number; courtType: TejoType; courtNumber: number; flexible?: boolean; players: Player[]; rounds: Round[] };
+type Round = {
+  id: number; number: number; loser: string | null; loserId: number | null; total: number; benefits: Benefit[]; flexible?: boolean;
+  losingTeam?: TejoTeam | null; charges?: { playerId: number; name: string; amount: number }[];
+};
+type Group = { id: number; courtType: TejoType; courtNumber: number; flexible?: boolean; teamSize?: number; players: Player[]; rounds: Round[] };
 type RedeemEntry = { groupId: number; roundId: number; player: Benefit; flexible?: boolean };
 type Overview = { active: Group[]; recent: Group[]; availableTokens: number | null };
 type Action = (path: string, payload: object, success: string) => Promise<boolean>;
 type Basket = { product: Product; quantity: number }[];
 
-function StartGroup({ locked, onStart }: { locked: boolean; onStart: (count: number) => Promise<boolean> }) {
+const isPending = (round: Round) => round.loser === null && !round.losingTeam;
+const teamPlayers = (players: Player[], size: number, team: TejoTeam) =>
+  team === 'A' ? players.slice(0, size) : players.slice(size);
+
+function StartGroup({ locked, onStart }: { locked: boolean; onStart: (count: number, teamSize?: number) => Promise<boolean> }) {
   const [count, setCount] = useState('2');
-  return <form onSubmit={(event) => { event.preventDefault(); if (!locked) void onStart(Number(count)); }}>
+  const [size, setSize] = useState(0);
+  const players = size ? size * 2 : Number(count);
+  return <form onSubmit={(event) => { event.preventDefault(); if (!locked) void onStart(players, size || undefined); }}>
     <h4>Abrir cancha</h4>
-    <label>Número de jugadores<input type="number" min={2} max={20} step={1} inputMode="numeric" required
-      disabled={locked} value={count} onChange={(event) => setCount(event.target.value)} /></label>
+    <div className="field-grid">
+      <label>Modalidad<select disabled={locked} value={size} onChange={(event) => setSize(Number(event.target.value))}>
+        <option value={0}>Individual</option>
+        {[2, 3, 4].map((teamSize) => <option key={teamSize} value={teamSize}>{teamSize} vs {teamSize}</option>)}
+      </select></label>
+      {!size && <label>Número de jugadores<input type="number" min={2} max={20} step={1} inputMode="numeric" required
+        disabled={locked} value={count} onChange={(event) => setCount(event.target.value)} /></label>}
+    </div>
+    {size > 0 && <p>{players} jugadores · <strong>{money.format(players * tejoProductValue)}</strong> por chico.
+      Cada jugador del equipo perdedor paga <strong>{money.format(2 * tejoProductValue)}</strong>.</p>}
     <button disabled={locked}>Iniciar grupo</button>
   </form>;
 }
@@ -41,6 +58,56 @@ function IssueAllTokens({ checked, onChange, canIssueAll, locked }: {
   </>;
 }
 
+function AssignTeamLosses({ group, size, accounts, locked, act, pending }: {
+  group: Group; size: number; accounts: Account[]; locked: boolean; act: Action; pending: number;
+}) {
+  const [counts, setCounts] = useState<Record<TejoTeam, string>>({ A: '', B: '' });
+  const [names, setNames] = useState<Record<number, string>>({});
+  const teams = tejoTeams.map((team) => ({
+    team, count: Number(counts[team]), members: teamPlayers(group.players, size, team),
+  }));
+  const losses = teams.filter(({ count }) => count > 0);
+  const total = losses.reduce((sum, { count }) => sum + count, 0);
+  const ready = total > 0 && total <= pending && teams.every(({ count }) => Number.isInteger(count) && count >= 0) &&
+    losses.every(({ members }) => members.every(({ id, accountId }) => accountId !== null || Boolean(names[id]?.trim())));
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (locked || !ready) return;
+    if (await act('tejo/' + group.id + '/assign', {
+      losses: losses.map(({ team, count, members }) => ({
+        team, count, players: members.map(({ id }) => ({ playerId: id, name: names[id] })),
+      })),
+    }, 'Chicos asignados. El cargo quedó repartido entre los jugadores de los equipos que perdieron.')) {
+      setCounts({ A: '', B: '' });
+      setNames({});
+    }
+  }
+
+  return <form onSubmit={save}>
+    <div className="section-title"><h4>Asignar chicos perdidos por equipo</h4><strong>{pending} por asignar</strong></div>
+    {pending > 1 && <p>Los resultados se aplican a los chicos pendientes en orden de registro, empezando por las pérdidas del equipo A.</p>}
+    <fieldset className="plain-fieldset" disabled={locked}>
+      {teams.map(({ team, count, members }) => <div key={team} className="space-above">
+        <label>Equipo {team} · chicos perdidos<input type="number" min={0} max={pending} step={1} inputMode="numeric" placeholder="0"
+          value={counts[team]} onChange={(event) => setCounts({ ...counts, [team]: event.target.value })} /></label>
+        {count > 0 && <>
+          <p>Cargo por jugador: <strong>{money.format(count * 2 * tejoProductValue)}</strong></p>
+          <div className="field-grid">
+            {members.map((player) => player.accountId !== null ? <p key={player.id}>{player.name}</p>
+              : <CustomerLookup key={player.id} accounts={accounts} label={'Nombre de ' + player.name.toLowerCase() + ' · equipo ' + team}
+                text={names[player.id] ?? ''} required
+                onTextChange={(name) => setNames((previous) => ({ ...previous, [player.id]: name }))}
+                onChoose={({ name }) => setNames((previous) => ({ ...previous, [player.id]: name }))} />)}
+          </div>
+        </>}
+      </div>)}
+      {total > pending && <p role="alert">Solo quedan {pending} chicos por asignar.</p>}
+      <button disabled={!ready}>Guardar pérdidas</button>
+    </fieldset>
+  </form>;
+}
+
 function RecordChicos({ group, accounts, locked, act, availableTokens }: {
   group: Group; accounts: Account[]; locked: boolean; act: Action; availableTokens: number | null;
 }) {
@@ -48,7 +115,8 @@ function RecordChicos({ group, accounts, locked, act, availableTokens }: {
   const canIssueAll = (availableTokens ?? 0) >= group.players.length;
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [names, setNames] = useState<Record<number, string>>({});
-  const pending = group.rounds.filter((round) => round.loser === null);
+  const pending = group.rounds.filter(isPending);
+  const size = group.teamSize ?? 0;
   const total = Object.values(counts).reduce((sum, count) => sum + Number(count), 0);
   const missingName = group.players.some((player) => Number(counts[player.id]) > 0 && player.accountId === null && !names[player.id]?.trim());
   const base = 'tejo/' + group.id;
@@ -66,17 +134,23 @@ function RecordChicos({ group, accounts, locked, act, availableTokens }: {
 
   return <>
     <div className="sale-panel">
-      <div className="section-title"><h4>{group.players.length} jugadores</h4>
-        <button type="button" className="secondary" disabled={locked || group.players.length >= 20}
-          onClick={() => void act(base + '/guest', {}, 'Jugador agregado para los próximos chicos.')}>Agregar jugador</button></div>
-      <p>{group.players.map((player) => player.name + ' (' + group.rounds.filter((round) => round.loserId === player.id).length + ' perdidos)').join(' · ')}</p>
+      <div className="section-title"><h4>{size ? size + ' vs ' + size + ' · ' : ''}{group.players.length} jugadores</h4>
+        {size === 0 && <button type="button" className="secondary" disabled={locked || group.players.length >= 20}
+          onClick={() => void act(base + '/guest', {}, 'Jugador agregado para los próximos chicos.')}>Agregar jugador</button>}</div>
+      {size ? <div className="field-grid">
+        {tejoTeams.map((team) => <div key={team}>
+          <strong>Equipo {team} · {group.rounds.filter((round) => round.losingTeam === team).length} perdidos</strong>
+          <p>{teamPlayers(group.players, size, team).map(({ name }) => name).join(' · ')}</p>
+        </div>)}
+      </div> : <p>{group.players.map((player) => player.name + ' (' + group.rounds.filter((round) => round.loserId === player.id).length + ' perdidos)').join(' · ')}</p>}
       <IssueAllTokens checked={issueAll} onChange={setIssueAll} canIssueAll={canIssueAll} locked={locked} />
       <button type="button" disabled={locked} onClick={async () => {
         if (await act(base + '/record', { issueAll: canIssueAll && issueAll },
           'Chico registrado. Puedes asignar quién perdió después.')) setIssueAll(false);
       }}>Registrar chico {group.rounds.length + 1}</button>
     </div>
-    {pending.length > 0 && <form onSubmit={save}>
+    {pending.length > 0 && (size ? <AssignTeamLosses group={group} size={size} accounts={accounts}
+      locked={locked} act={act} pending={pending.length} /> : <form onSubmit={save}>
       <div className="section-title"><h4>Asignar chicos perdidos</h4><strong>{pending.length} por asignar</strong></div>
       <fieldset className="plain-fieldset" disabled={locked}>
         {group.players.map((player) => {
@@ -93,7 +167,7 @@ function RecordChicos({ group, accounts, locked, act, availableTokens }: {
         {total > pending.length && <p role="alert">Solo quedan {pending.length} chicos por asignar.</p>}
         <button disabled={total <= 0 || total > pending.length || missingName}>Guardar pérdidas</button>
       </fieldset>
-    </form>}
+    </form>)}
   </>;
 }
 
@@ -260,7 +334,12 @@ function RoundHistory({ group, locked, onRedeem, act, availableTokens }: {
   return (
     <ul className="ledger-list">{group.rounds.map((round) => (
       <li key={round.number}>
-        <div className="row-between"><strong>Chico {round.number} · {round.loser ? (round.flexible ? 'cargo de ' : 'perdió ') + round.loser : 'sin perdedor asignado'}</strong><strong>{money.format(round.total)}</strong></div>
+        <div className="row-between"><strong>Chico {round.number} · {round.losingTeam ? 'perdió el equipo ' + round.losingTeam
+          : round.loser ? (round.flexible ? 'cargo de ' : 'perdió ') + round.loser : 'sin perdedor asignado'}</strong>
+          <strong>{money.format(round.total)}</strong></div>
+        {Boolean(round.charges?.length) && <ul className="sale-lines" aria-label="Cargos del equipo perdedor">
+          {round.charges?.map(({ playerId, name, amount }) => <li key={playerId}><span>{name}</span><strong>{money.format(amount)}</strong></li>)}
+        </ul>}
         <details className="space-above"><summary>Fichas y consumos · {round.benefits.filter((benefit) => !benefit.issuedAt && !benefit.redemption).length} pendientes</summary>
         <ul className="tejo-benefits">{round.benefits.map((benefit) => (
           <li key={benefit.accountId}>
@@ -341,7 +420,7 @@ export function Tejo() {
   const group = overview?.active.find((item) => item.courtType === type && item.courtNumber === court);
   const benefits = group?.rounds.flatMap((round) => round.benefits) ?? [];
   const pending = benefits.filter((benefit) => !benefit.issuedAt && !benefit.redemption).length;
-  const pendingResults = group?.rounds.filter((round) => round.loser === null).length ?? 0;
+  const pendingResults = group?.rounds.filter(isPending).length ?? 0;
 
   return (
     <section aria-labelledby="tejo-title">
@@ -367,7 +446,7 @@ export function Tejo() {
           {error && <p role="alert">{error}</p>}
           {status && <p role="status">{status}</p>}
           {!group ? <StartGroup key={courtLabel(type, court)} locked={locked}
-            onStart={(playerCount) => act('tejo', { courtType: type, courtNumber: court, playerCount }, 'Cancha abierta.')} />
+            onStart={(playerCount, teamSize) => act('tejo', { courtType: type, courtNumber: court, playerCount, teamSize }, 'Cancha abierta.')} />
             : <>
               {!group.flexible && <p>{group.players.map((player) => player.name).join(' · ')}</p>}
               <p>{benefits.filter((benefit) => benefit.issuedAt).length} fichas entregadas ·{' '}

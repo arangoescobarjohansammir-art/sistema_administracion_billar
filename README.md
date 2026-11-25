@@ -8,7 +8,9 @@ La aplicación local permite administrar el inventario, registrar ventas de prod
 
 En **Billar**, abre la mesa, registra los productos entregados y pulsa **Terminar y cobrar**. La mesa muestra las horas de inicio y fin. Si detuviste el tiempo por error, usa **Reanudar tiempo**. La pausa queda fuera del cobro. Cobra a una persona o abre **Repartir entre personas** para dividir el tiempo y los consumos. Si se abrió por error y no tiene productos entregados, usa **Cancelar inicio** para liberar la mesa sin cargo.
 
-En **Tejo → Canchas y chicos**, elige la cancha e ingresa cuántos jugadores hay. Puedes agregar más jugadores para los próximos chicos. Registra los chicos aunque todavía no sepas quién perdió. Después, en **Asignar chicos perdidos**, escribe cuántos perdió cada persona y el nombre para cargar el importe a su cuenta. Cada jugador puede usar su derecho en una ficha o en productos incluso antes de que se asigne el resultado.
+En **Tejo**, elige la cancha y la modalidad **Individual**, **2 vs 2**, **3 vs 3** o **4 vs 4**. Puedes registrar chicos antes de saber quién perdió. En individual, indica cuántos perdió cada jugador. En equipos, indica cuántos perdió el equipo A o B y escribe los nombres de sus integrantes cuando se les cargue un chico por primera vez. En 2 vs 2 el chico cuesta $16.000 y se cargan $8.000 a cada jugador del equipo perdedor. Cada participante puede usar su ficha o su consumo aunque el resultado siga pendiente.
+
+En **Billar → Repartir entre personas**, puedes preparar de una vez el reparto igual del tiempo y los consumos entre 2, 3 o 4 jugadores. Luego puedes ajustar los importes y cobrar o anotar cada parte.
 
 En **Venta → Cobrar**, cada ficha cubre hasta $4.000 en productos tanto en **Fichas** como en **Mixto**. Si queda una diferencia, puedes completarla en efectivo, por transferencia o dejarla fiada a un cliente. Los abonos en **Cuentas** y los pagos de la cuenta de billar aplican las fichas a $3.000.
 

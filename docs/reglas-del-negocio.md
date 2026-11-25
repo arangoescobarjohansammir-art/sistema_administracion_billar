@@ -20,6 +20,7 @@
 - Se puede abrir un grupo con jugadores numerados sin crear cuentas. Se registran los chicos pendientes y luego la cantidad perdida por jugador. El nombre se pide para cargar la deuda. El sistema asigna los cargos a los chicos pendientes en que ese jugador participó. Un jugador que llega después no cambia el importe de chicos anteriores.
 
 - El tejo se cobra por chico. Quien pierde paga $4.000 por participante. Cada participante, incluido quien pierde, tiene derecho a una ficha o a consumir hasta $4.000 en productos por cada chico.
+- En 2 vs 2, 3 vs 3 y 4 vs 4, los equipos mantienen su tamaño durante el grupo y los integrantes perdedores dividen el importe del chico en partes iguales. Los totales son $16.000, $24.000 y $32.000 respectivamente, con $8.000 a cargo de cada perdedor. Se pueden registrar los chicos pendientes y después indicar cuántos perdió cada equipo. El sistema aplica esas cantidades a los chicos pendientes en orden de registro, primero las del equipo A y luego las del B.
 - El jugador puede combinar productos en un mismo canje. Si los productos cuestan más de $4.000, el jugador cubre el excedente. Si cuestan menos y se cierra el canje, la diferencia se pierde.
 - Una ficha ya entregada puede canjearse por hasta $4.000 en productos o aplicarse como $3.000 al pago de una cuenta. El canje por productos no da cambio ni deja saldo en la ficha.
 - El canje de fichas físicas por productos se registra al cobrar en **Venta**. Los consumos cubiertos directamente por un chico se registran en **Tejo**.

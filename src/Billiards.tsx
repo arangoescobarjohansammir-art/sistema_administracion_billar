@@ -16,6 +16,7 @@ type Session = {
 type Closed = Session & { shares: { saleId: number; name: string | null; total: number }[] };
 type Dashboard = { rate: number; active: Session[]; recent: Closed[] };
 type Part = { key: number; account: string; amounts: number[]; payment: PaymentInput; credit: string };
+const emptyPart = (key: number, amounts: number[]): Part => ({ key, account: '', amounts, payment: emptyPayment, credit: '' });
 
 const sessionDate = new Intl.DateTimeFormat('es-CO', {
   day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'America/Bogota',
@@ -39,9 +40,7 @@ function BillSplit({ session, accounts, locked, onClose }: {
   const lines = [{ name: 'Tiempo de juego', total: session.time }, ...session.items.map((item) => ({
     name: item.quantity + ' × ' + item.label, total: item.quantity * item.unitPrice,
   }))];
-  const [parts, setParts] = useState<Part[]>(() => [{
-    key: 1, account: '', amounts: lines.map((line) => line.total), payment: emptyPayment, credit: '',
-  }]);
+  const [parts, setParts] = useState<Part[]>(() => [emptyPart(1, lines.map((line) => line.total))]);
   const totals = parts.map((part) => part.amounts.reduce((sum, amount) => sum + amount, 0));
   const remainders = lines.map((line, index) => line.total - parts.reduce((sum, part) => sum + (part.amounts[index] ?? 0), 0));
   const named = parts.filter((part, index) => part.account && totals[index] > 0).map((part) => part.account);
@@ -53,11 +52,16 @@ function BillSplit({ session, accounts, locked, onClose }: {
       (totals[index] === 0 || mixedCreditPlan(remaining, part.credit).valid);
   });
 
-  function divideEqually() {
-    setParts((previous) => previous.map((part, index) => ({
-      ...part, amounts: lines.map((line) => Math.floor(line.total / previous.length) +
-        Number(index < line.total % previous.length)),
-    })));
+  function divideEqually(entries: Part[]) {
+    return entries.map((part, index) => ({
+      ...part, amounts: lines.map((line) => Math.floor(line.total / entries.length) +
+        Number(index < line.total % entries.length)),
+    }));
+  }
+
+  function prepareTeam(size: number) {
+    const others = Array.from({ length: size - 1 }, () => emptyPart(nextKey.current++, []));
+    setParts(divideEqually([parts[0], ...others]));
   }
 
   function updatePart(key: number, fields: Partial<Part>) {
@@ -81,12 +85,21 @@ function BillSplit({ session, accounts, locked, onClose }: {
       <div className="section-title"><h3>Repartir y liquidar</h3><strong>{money.format(session.total)}</strong></div>
       <fieldset className="plain-fieldset" disabled={locked}>
         {session.total > 0 && <>
-          <div className="actions">
+          {parts.length === 1 && !parts[0].account && totalPayment(parts[0].payment) === 0 && !parts[0].credit &&
+            remainders.every((amount) => amount === 0) && <fieldset className="plain-fieldset">
+              <legend>Dividir por igual entre un equipo</legend>
+              <div className="actions">
+                {[2, 3, 4].map((size) => <button key={size} className="secondary" type="button"
+                  onClick={() => prepareTeam(size)}>{size} jugadores</button>)}
+              </div>
+            </fieldset>}
+          <div className="actions space-above">
             <button className="secondary" type="button" disabled={parts.length >= 20} onClick={() => {
               const key = nextKey.current++;
-              setParts((previous) => [...previous, { key, account: '', amounts: lines.map(() => 0), payment: emptyPayment, credit: '' }]);
+              setParts((previous) => [...previous, emptyPart(key, lines.map(() => 0))]);
             }}>Agregar persona</button>
-            {parts.length > 1 && <button className="secondary" type="button" onClick={divideEqually}>Dividir todo por igual</button>}
+            {parts.length > 1 && <button className="secondary" type="button"
+              onClick={() => setParts(divideEqually)}>Dividir todo por igual</button>}
           </div>
           {parts.map((part, index) => (
             <fieldset className="bill-part" key={part.key}>
