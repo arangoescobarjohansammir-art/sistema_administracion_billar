@@ -45,7 +45,7 @@ La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo.
 
 ## Panel móvil del administrador
 
-Con el servidor local iniciado, abre [la demostración](http://127.0.0.1:4173/admin/?demo=1). Puedes cambiar de día, abrir un cierre, consultar las mesas y canchas ocupadas y buscar productos. Los datos de esta demostración son ficticios y funcionan sin configurar Supabase.
+Abre el [panel móvil del club](https://club-tejo-patio-bonito.pages.dev/) o la [demostración con datos ficticios](https://club-tejo-patio-bonito.pages.dev/?demo=1). También puedes abrir [la demo local](http://127.0.0.1:4173/admin/?demo=1) con la caja iniciada. Puedes cambiar de día, abrir un cierre, consultar las mesas y canchas ocupadas y buscar productos.
 
 El panel real es privado y de solo lectura. Consulta los últimos 30 días de ventas y cobros, los últimos 30 cierres, los saldos pendientes, el inventario activo y la ocupación. Muestra la hora de la última sincronización y avisa si los datos llevan más de tres minutos sin actualizarse. Sigue los [pasos de instalación del panel remoto](docs/panel-admin.md) para conectarlo al proyecto Supabase del club y publicar su enlace HTTPS.
 

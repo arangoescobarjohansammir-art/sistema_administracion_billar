@@ -35,7 +35,7 @@ npm run build:admin
 
 Publica únicamente el contenido de `dist/admin` en un alojamiento web estático con HTTPS. Abre el enlace del alojamiento en el celular e inicia sesión con la cuenta autorizada. Comprueba que aparezca la última sincronización y una operación que también veas en la caja.
 
-Para publicar la pantalla en Cloudflare, sube la carpeta `dist/admin` o un ZIP con su contenido a **Cloudflare Drop** y reclama la publicación desde tu cuenta para conservar el enlace. Los datos y el inicio de sesión se gestionan en Supabase. [Publicación con Cloudflare Drop](https://developers.cloudflare.com/changelog/post/2026-07-08-cloudflare-drag-and-drop/).
+El proyecto del club está publicado en [Cloudflare Pages](https://club-tejo-patio-bonito.pages.dev/). Para actualizarlo, vuelve a compilar y entra a **Workers y Pages → club-tejo-patio-bonito → Crear implementación**. Elige producción y sube un ZIP con el contenido de `dist/admin`. Los datos y el inicio de sesión se gestionan en Supabase. [Carga directa en Cloudflare Pages](https://developers.cloudflare.com/pages/get-started/direct-upload/).
 
 Para publicar la demo en GitHub Pages, abre **Settings → Pages** en un repositorio donde esté disponible y elige **GitHub Actions** como origen. Luego abre **Actions → Publicar demo móvil → Run workflow** en `main`. [Configurar GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
