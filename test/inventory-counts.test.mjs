@@ -16,14 +16,15 @@ test('registra diferencias por producto y aplica un ajuste auditado sin repetir 
   const liquor = await product('Aguardiente', 'Media');
   const excluded = await product('Inactivo', 'Botella', false);
   const untouched = await product('Papas', 'Paquete');
-  const movement = (id, quantity, direction = 'in') => post('/api/products/' + id + '/movements', 201, {
-    direction, quantity, unit: 'unit', reason: 'Movimiento de prueba',
+  const receive = (id, quantity) => post('/api/products/' + id + '/movements', 201, {
+    direction: 'in', quantity, unit: 'unit', reason: 'Entrada de prueba',
   });
-  await movement(beer.id, 10);
-  await movement(liquor.id, 2);
-  await movement(untouched.id, 8);
+  await receive(beer.id, 10);
+  await receive(liquor.id, 2);
+  await receive(untouched.id, 8);
   await post('/api/operators', 201, { name: 'Cajera de prueba', username: 'conteo', secret: '159753' });
   await server.signIn('login', { username: 'conteo', secret: '159753' }, 200);
+  await server.openShift();
   const base = '/api/inventory-counts';
   async function prepare(items) {
     const products = await json(base + '/products', 200);
@@ -34,8 +35,11 @@ test('registra diferencias por producto y aplica un ajuste auditado sin repetir 
   }
 
   const original = await prepare([[beer, 7], [liquor, 4]]);
-  await movement(beer.id, 1);
-  await movement(beer.id, 1, 'out');
+  await receive(beer.id, 1);
+  await post('/api/sales', 201, {
+    accountId: null, items: [{ productId: beer.id, quantity: 1, unitPrice: 4000 }],
+    payment: { cash: 4000, transfer: 0, tokens: 0 },
+  });
   await post(base, 409, { items: original, note: '' });
   assert.deepEqual(await json(base, 200), []);
   const items = await prepare([[beer, 0], [liquor, 4]]);
@@ -51,7 +55,7 @@ test('registra diferencias por producto y aplica un ajuste auditado sin repetir 
   assert.equal((await json('/api/products', 200)).find((row) => row.id === beer.id).stock, 10);
 
   const pending = await post(base, 201, { items: await prepare([[untouched, 5]]), note: '' });
-  await movement(untouched.id, 1);
+  await receive(untouched.id, 1);
   await server.signIn('login', { username: 'admin-prueba', secret: 'clave-ficticia-2026' }, 200);
   assert.equal((await json(base + '/' + pending.id, 200)).items[0].changed, true);
   await post(base + '/' + pending.id + '/apply', 409, { note: 'El conteo ya cambió' });

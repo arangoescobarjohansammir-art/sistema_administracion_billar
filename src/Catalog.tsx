@@ -117,7 +117,9 @@ function ProductForm({ product, onSave, onCancel }: {
   );
 }
 
-function Inventory({ product, onMovement }: { product: Product; onMovement: (value: Product) => void }) {
+function Inventory({ product, onMovement, isAdmin }: {
+  product: Product; onMovement: (value: Product) => void; isAdmin: boolean;
+}) {
   const [history, setHistory] = useState<Movement[] | null>(null);
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -180,18 +182,19 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
       </div>
       {Boolean(product.active) && (
         <form onSubmit={save}>
-          <h4>Registrar movimiento</h4>
+          <h4>{isAdmin ? 'Registrar movimiento' : 'Registrar entrada de mercancía'}</h4>
           <fieldset disabled={busy} className="field-grid">
-            <label>Tipo<select value={direction} onChange={(event) => setDirection(event.target.value)}>
+            {isAdmin && <label>Tipo<select value={direction} onChange={(event) => setDirection(event.target.value)}>
               <option value="in">Entrada</option><option value="out">Salida manual</option>
-            </select></label>
+            </select></label>}
             <label>Unidad<select value={unit} onChange={(event) => setUnit(event.target.value)}>
               <option value="unit">Unidad de venta</option>
               {product.packageName && <option value="package">{product.packageName} ({product.unitsPerPackage} unidades)</option>}
             </select></label>
             <label>Cantidad<input type="number" min={1} max={1_000_000} step={1} required value={quantity}
               onChange={(event) => setQuantity(event.target.value)} /></label>
-            <label>Motivo<input name="reason" required maxLength={240} placeholder="Ej. compra o producto dañado" /></label>
+            <label>Motivo<input name="reason" required maxLength={240}
+              placeholder={isAdmin ? 'Ej. compra o producto dañado' : 'Ej. entrega del proveedor'} /></label>
             {direction === 'in' && purchases.length > 0 && <label className="wide">Gasto de caja relacionado (opcional)
               <select name="cashMovementId"><option value="">Ninguno</option>
                 {purchases.map((purchase) => <option key={purchase.id} value={purchase.id}>
@@ -203,7 +206,7 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
           {unit === 'package' && Number(quantity) > 0 && <p>Equivale a {Number(quantity) * product.unitsPerPackage} unidades.</p>}
           {saveError && <p role="alert">{saveError}</p>}
           {saved && <p role="status">Movimiento guardado.</p>}
-          <button disabled={busy}>{busy ? 'Registrando…' : 'Registrar movimiento'}</button>
+          <button disabled={busy}>{busy ? 'Registrando…' : isAdmin ? 'Registrar movimiento' : 'Registrar entrada'}</button>
         </form>
       )}
       <h4>Historial de movimientos</h4>
@@ -232,11 +235,11 @@ export function Catalog({ isAdmin }: { isAdmin: boolean }) {
       <button className="navigation" aria-pressed={view === 'products'} onClick={() => setView('products')}>Productos</button>
       <button className="navigation" aria-pressed={view === 'counts'} onClick={() => setView('counts')}>Conteo físico</button>
     </nav>
-    {view === 'products' ? <CatalogProducts /> : <InventoryCounts isAdmin={isAdmin} />}
+    {view === 'products' ? <CatalogProducts isAdmin={isAdmin} /> : <InventoryCounts isAdmin={isAdmin} />}
   </section>;
 }
 
-function CatalogProducts() {
+function CatalogProducts({ isAdmin }: { isAdmin: boolean }) {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -269,11 +272,11 @@ function CatalogProducts() {
     <section aria-labelledby="catalog-title">
       <div className="section-title">
         <h2 id="catalog-title">Productos e inventario</h2>
-        {products && editing === null && <button onClick={() => { setMessage(''); setEditing('new'); setInventory(null); }}>Agregar producto</button>}
+        {isAdmin && products && editing === null && <button onClick={() => { setMessage(''); setEditing('new'); setInventory(null); }}>Agregar producto</button>}
       </div>
       {error && <p role="alert">{error} <button className="secondary" onClick={() => void load()}>Reintentar</button></p>}
       {!products && !error && <p role="status">Cargando productos…</p>}
-      {editing !== null && <ProductForm key={editing} product={products?.find((product) => product.id === editing)}
+      {isAdmin && editing !== null && <ProductForm key={editing} product={products?.find((product) => product.id === editing)}
         onCancel={() => setEditing(null)} onSave={(product) => {
           upsert(product);
           setEditing(null);
@@ -287,7 +290,7 @@ function CatalogProducts() {
             <label>Buscar producto<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, marca o presentación" /></label>
             <label className="check"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Mostrar inactivos</label>
           </div>
-          {shown?.length === 0 && <p>{products.length === 0 ? 'Agrega tu primer producto para comenzar.' : 'No hay productos con ese filtro.'}</p>}
+          {shown?.length === 0 && <p>{products.length === 0 ? 'El catálogo todavía no tiene productos.' : 'No hay productos con ese filtro.'}</p>}
           <ul className="products">{shown?.map((product) => (
             <li key={product.id} className="product">
               {product.hasPhoto ? <img src={'/api/products/' + product.id + '/photo?v=' + photoVersion} alt="" loading="lazy" />
@@ -298,8 +301,8 @@ function CatalogProducts() {
                 <p className="product-values"><strong>{currency.format(product.price)}</strong><span>{product.stock} unidades</span></p>
                 {!product.active && <p>Inactivo</p>}
                 <div className="actions">
-                  <button type="button" className="secondary" disabled={editing !== null}
-                    onClick={() => { setMessage(''); setEditing(product.id); setInventory(null); }}>Editar</button>
+                  {isAdmin && <button type="button" className="secondary" disabled={editing !== null}
+                    onClick={() => { setMessage(''); setEditing(product.id); setInventory(null); }}>Editar</button>}
                   <button type="button" className="secondary" disabled={editing !== null}
                     aria-expanded={inventory === product.id} onClick={() => {
                       setMessage('');
@@ -307,7 +310,7 @@ function CatalogProducts() {
                     }}>Movimientos</button>
                 </div>
               </div>
-              {inventory === product.id && <Inventory key={product.id} product={product} onMovement={upsert} />}
+              {inventory === product.id && <Inventory key={product.id} product={product} onMovement={upsert} isAdmin={isAdmin} />}
             </li>
           ))}</ul>
         </>

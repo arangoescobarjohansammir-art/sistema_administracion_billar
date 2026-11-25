@@ -4,6 +4,7 @@ import { readJson, sendJson } from './http.js';
 import { findProduct, productSelect, recordInventoryMovement } from './inventory.js';
 import { activeShiftId } from './cash-ledger.js';
 import type { Audit } from './audit.js';
+import { requestOperator } from './operators.js';
 
 const photoLimit = 2 * 1024 * 1024;
 const nameLimit = 100;
@@ -53,6 +54,9 @@ export function createCatalog(database: DatabaseSync, audit?: Audit) {
   ].join('\n'));
 
   async function saveProduct(request: IncomingMessage, response: ServerResponse, id?: number) {
+    if (requestOperator(request)?.role !== 'admin') {
+      return sendJson(response, 403, { error: 'Solo el administrador puede agregar o editar productos.' });
+    }
     const input = await readJson(request, Math.ceil(photoLimit / 3) * 4 + 4096);
     if (!input) return sendJson(response, 400, { error: 'Revisa los datos. La foto admite hasta 2 MB.' });
     const name = stringField(input.name, nameLimit);
@@ -93,6 +97,9 @@ export function createCatalog(database: DatabaseSync, audit?: Audit) {
     if (!reason || !integerField(quantity, 1, quantityLimit) ||
       (direction !== 'in' && direction !== 'out') || (unit !== 'unit' && unit !== 'package')) {
       return sendJson(response, 400, { error: 'Indica un motivo y una cantidad entera mayor que cero.' });
+    }
+    if (direction === 'out' && requestOperator(request)?.role !== 'admin') {
+      return sendJson(response, 403, { error: 'Solo el administrador puede registrar salidas manuales.' });
     }
     if (cashMovementId !== undefined && (direction !== 'in' || !integerField(cashMovementId, 1, Number.MAX_SAFE_INTEGER))) {
       return sendJson(response, 400, { error: 'Solo las entradas pueden vincularse a un gasto de caja.' });

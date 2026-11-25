@@ -35,10 +35,10 @@
 
 ## Catálogo e inventario
 
-- El catálogo permite agregar, editar y desactivar productos con nombre, marca, presentación, precio y foto. El cajero ve las fotos sin internet. Desactivar un producto o cambiar su precio conserva el historial anterior.
+- El administrador puede agregar, editar, desactivar y reactivar productos. También controla los precios y las unidades por empaque. El cajero consulta el catálogo, incluidas las fotos, sin internet. Desactivar un producto o cambiar su precio conserva el historial anterior.
 - La cerveza se compra por canastas y se vende por unidad. El factor de conversión se configura por producto. Las medias y botellas de aguardiente vienen de fábrica y tienen existencias independientes.
 - Se registra una salida cuando se entrega un producto, tanto si se paga de inmediato como si se fía o se entrega por canje. Cobrar la deuda después no genera otra salida.
-- Se registran entradas por compras y ajustes con motivo. Cuando aplique, una entrada se puede vincular al retiro que pagó la mercancía.
+- El cajero y el administrador pueden registrar entradas por compras con su motivo. Cuando aplique, una entrada se puede vincular al retiro que pagó la mercancía. Las salidas manuales y los ajustes que resulten de un conteo físico requieren la cuenta del administrador.
 
 ## Caja y cierre
 

@@ -18,6 +18,14 @@ test('identifica al cajero y conserva la venta original al anular su pago, créd
   await post('/api/operators', 400, { name: 'Diana Pérez', ...cashierCredentials, secret: '123' });
   const cashier = await post('/api/operators', 201, { name: 'Diana Pérez', ...cashierCredentials });
   assert.equal(Object.hasOwn(cashier, 'verifier'), false);
+  const productFields = {
+    name: 'Cerveza de prueba', presentation: 'Botella', brand: '', price: 4000,
+    packageName: 'Canasta', unitsPerPackage: 4, active: true,
+  };
+  const product = await post('/api/products', 201, productFields);
+  const productPath = '/api/products/' + product.id;
+  const stockPath = productPath + '/movements';
+  const manualOutput = { direction: 'out', unit: 'unit', quantity: 1, reason: 'Unidad dañada' };
 
   await post('/api/session/login', 401, { ...cashierCredentials, secret: '111111' });
   await server.signIn('login', cashierCredentials, 200);
@@ -31,12 +39,14 @@ test('identifica al cajero y conserva la venta original al anular su pago, créd
   const shift = await server.openShift();
   const shiftPath = '/api/cash/' + shift.id;
   assert.equal((await json(shiftPath, 200)).shift.cashier, 'Diana Pérez');
-  const product = await post('/api/products', 201, {
-    name: 'Cerveza de prueba', presentation: 'Botella', brand: '', price: 4000,
-    packageName: '', unitsPerPackage: 1, active: true,
-  });
-  const stockPath = '/api/products/' + product.id + '/movements';
-  const inventory = await post(stockPath, 201, { direction: 'in', unit: 'unit', quantity: 8, reason: 'Compra para el turno' });
+  await post('/api/products', 403, { ...productFields, name: 'Producto nuevo' });
+  await json(productPath, 403, 'PUT', { ...productFields, price: 1000 });
+  await json(productPath, 403, 'PUT', { ...productFields, active: false });
+  const inventory = await post(stockPath, 201, { direction: 'in', unit: 'package', quantity: 2, reason: 'Compra para el turno' });
+  assert.equal(inventory.stock, 8);
+  await post(stockPath, 403, manualOutput);
+  const [unchanged] = await json('/api/products', 200);
+  assert.deepEqual([unchanged.price, unchanged.active, unchanged.stock], [4000, 1, 8]);
   const account = await post('/api/accounts', 201, { name: 'Cliente de ejemplo' });
   const sale = await post('/api/sales', 201, {
     accountId: account.id, items: [{ productId: product.id, quantity: 4, unitPrice: 4000 }],
@@ -87,6 +97,15 @@ test('identifica al cajero y conserva la venta original al anular su pago, créd
   });
   await post('/api/accounts/' + account.id + '/payments', 201, { payment: { cash: 2000, transfer: 0, tokens: 0 } });
   await post('/api/corrections/sales/' + credit.id + '/void', 409, { ...correction, requestId: randomUUID() });
+
+  const adjusted = await post(stockPath, 201, manualOutput);
+  assert.equal(adjusted.stock, 6);
+  const edited = await json(productPath, 200, 'PUT', { ...productFields, price: 5000, active: false });
+  assert.deepEqual([edited.price, edited.active], [5000, 0]);
+  assert.equal((await json(productPath, 200, 'PUT', { ...productFields, price: 5000 })).active, 1);
+  const lastAdjustment = (await json('/api/audit', 200)).find(({ kind }) => kind === 'inventory_movement');
+  assert.equal(lastAdjustment.actorName, admin.name);
+  assert.match(lastAdjustment.reason, /Unidad dañada/);
 
   await post('/api/operators/' + cashier.id, 200, { secret: '982416' });
   assert.equal((await server.fetch('/api/cash', { headers: { Cookie: cashierCookie } })).status, 401);
