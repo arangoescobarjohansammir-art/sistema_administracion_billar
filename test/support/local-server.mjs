@@ -16,9 +16,10 @@ export async function testServer(entry = 'dist/server/index.js') {
   let cookie = '';
   const admin = { name: 'Administrador de prueba', username: 'admin-prueba', secret: 'clave-ficticia-2026' };
 
-  async function start({ authenticate = true } = {}) {
+  async function start({ authenticate = true, secondaryBackupDirectory = '' } = {}) {
     child = spawn(process.execPath, [entry], {
       env: { ...process.env, PORT: '0', CAJA_DB_PATH: databasePath, CAJA_BACKUP_DIR: '',
+        CAJA_BACKUP_SECONDARY_DIR: secondaryBackupDirectory,
         CAJA_SUPABASE_URL: '', CAJA_SUPABASE_SECRET_KEY: '', CAJA_SETUP_CODE: '' },
       stdio: ['ignore', 'pipe', 'inherit'],
     });

@@ -57,7 +57,9 @@ La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo.
 
 ## Copias de seguridad
 
-La caja crea y verifica un respaldo después de cada cierre. Al iniciar y mientras la caja está abierta, también comprueba que exista una copia de las últimas 24 horas que cubra el cierre más reciente. Si falla, registra el motivo en la terminal y reintenta en segundo plano. Los archivos quedan en `data/backups` por defecto y se conservan las copias anteriores.
+La caja crea y verifica un respaldo después de cada cierre. Al iniciar y cada cinco minutos, comprueba que haya una copia verificada de las últimas 24 horas que cubra el cierre más reciente. En **Caja → Copias de seguridad** puedes ver la fecha de la copia, la última verificación y los errores. La copia principal queda en `data/backups` por defecto y se conservan las copias anteriores.
+
+Para guardar también una segunda copia, conecta un disco físico distinto del que aloja la base de caja. En el archivo `.env`, agrega por ejemplo `CAJA_BACKUP_SECONDARY_DIR=E:/Respaldos/PatioBonito`, con la letra de tu unidad, y reinicia la caja. Usa una carpeta dedicada al respaldo de esta instalación. Comprueba que los dos destinos aparezcan como **Verificado**. Si se desconecta el segundo disco, la copia local sigue funcionando y la caja vuelve a intentar guardar la secundaria automáticamente.
 
 Para crear un respaldo manual y ensayar una restauración, usa la terminal de VS Code con la aplicación ya compilada:
 
@@ -67,7 +69,7 @@ npm run backup -- verify "data/backups/NOMBRE-DE-LA-COPIA.sqlite"
 npm run backup -- restore "data/backups/NOMBRE-DE-LA-COPIA.sqlite" "data/recuperacion/caja.sqlite"
 ```
 
-Usa el nombre que devuelve el comando de respaldo. La restauración exige un archivo de destino nuevo y verifica la copia antes de abrirla. Incluye ventas, cuentas, inventario, cierres y fotos. Guarda una copia también en otro disco para recuperarla si falla el computador. Si deseas guardar los respaldos directamente en otro disco, configura `CAJA_BACKUP_DIR` en `.env` y reinicia la caja.
+Usa el nombre que devuelve el comando de respaldo. Para ensayar la recuperación, también puedes pasar al comando `restore` una copia del segundo disco. La restauración exige un archivo de destino nuevo y verifica la copia antes de abrirla. Incluye ventas, cuentas, inventario, cierres y fotos. `CAJA_BACKUP_DIR` permite personalizar la carpeta principal si ya usabas esa opción.
 
 Cuando necesites continuar la operación con una base recuperada, elige la copia verificada más reciente. Detén la caja, configura `CAJA_DB_PATH=data/recuperacion/caja.sqlite` en `.env` e inicia con `npm start`. Comprueba que aparezca el último turno recuperado. Conserva la base original para poder revisar los movimientos posteriores al respaldo.
 

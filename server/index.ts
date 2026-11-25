@@ -111,6 +111,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     return handleTejo(request, response, path);
   }
   if (path === '/api/cash' || path.startsWith('/api/cash/')) {
+    if (path === '/api/cash/backups') {
+      if (request.method !== 'GET') return sendJson(response, 405, { error: 'Método no permitido.' });
+      return sendJson(response, 200, backups.status());
+    }
     return cash.handle(request, response, path);
   }
   if (path === '/api/local-note') {

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { constants, copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { isMainThread, workerData } from 'node:worker_threads';
+import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 
 const requiredTables = ['cash_shifts', 'sales', 'customer_accounts', 'inventory_movements', 'products'];
 
@@ -60,7 +60,40 @@ export function restoreCashBackup(source: string, destination: string) {
   verifyCashDatabase(destination);
 }
 
+function recentVerifiedBackup(folder: string, cutoff: number) {
+  let entries;
+  try {
+    entries = readdirSync(folder, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  const candidates = entries.flatMap((entry) => {
+    if (!entry.isFile()) return [];
+    const match = /^caja-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z-(?:diaria|manual|turno-\d+)-[a-f0-9-]{36}\.sqlite$/.exec(entry.name);
+    if (!match) return [];
+    const time = Date.parse(`${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`);
+    return time >= cutoff && time <= Date.now() ? [{ name: entry.name, time }] : [];
+  }).sort((first, second) => second.time - first.time);
+  for (const candidate of candidates) {
+    try {
+      verifyCashDatabase(join(folder, candidate.name));
+      return new Date(candidate.time).toISOString();
+    } catch {
+      // An unreadable or damaged file does not count as a verified copy.
+    }
+  }
+  return null;
+}
+
 if (!isMainThread) {
-  const { source, folder, reason } = workerData as { source: string; folder: string; reason: string };
-  createCashBackup(source, folder, reason);
+  const { source, folder, reason, cutoff } = workerData as {
+    source: string; folder: string; reason: string; cutoff: number | null;
+  };
+  let copiedAt = cutoff === null ? null : recentVerifiedBackup(folder, cutoff);
+  if (copiedAt === null) {
+    copiedAt = new Date().toISOString();
+    createCashBackup(source, folder, reason);
+  }
+  parentPort!.postMessage({ copiedAt, verifiedAt: new Date().toISOString() });
 }

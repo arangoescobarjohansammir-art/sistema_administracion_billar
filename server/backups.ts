@@ -1,70 +1,103 @@
-import { readdir } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
+import type { BackupStatus } from '../shared/backup.js';
 
 const maxAgeMs = 24 * 60 * 60 * 1000;
 const retryMs = 5 * 60 * 1000;
+type VerifiedCopy = Pick<BackupStatus, 'copiedAt' | 'verifiedAt'>;
+const comparablePath = (path: string) => process.platform === 'win32' ? path.toLowerCase() : path;
+
+function verifyOrCreate(source: string, folder: string, reason: string, cutoff: number | null) {
+  return new Promise<VerifiedCopy>((resolve, reject) => {
+    const worker = new Worker(new URL('./backup-file.js', import.meta.url), { workerData: { source, folder, reason, cutoff } });
+    let verified: VerifiedCopy | undefined;
+    worker.once('message', (copy: VerifiedCopy) => { verified = copy; });
+    worker.once('error', reject);
+    worker.once('exit', (code) => {
+      if (code === 0 && verified) resolve(verified);
+      else reject(new Error('El proceso de respaldo no pudo verificar la copia.'));
+    });
+  });
+}
 
 export function createAutomaticBackups(database: DatabaseSync, databasePath: string) {
   const source = resolve(databasePath);
-  const folder = resolve(process.env.CAJA_BACKUP_DIR || join(dirname(source), 'backups'));
+  const localFolder = resolve(process.env.CAJA_BACKUP_DIR || join(dirname(source), 'backups'));
+  const secondaryPath = process.env.CAJA_BACKUP_SECONDARY_DIR?.trim();
   const lastClose = database.prepare('SELECT MAX(closed_at) AS time FROM cash_shifts');
-  const requested = new Set<number | null>();
-  let running = false;
-  let lastWarning = '';
 
-  async function recentCopyExists() {
-    let files;
-    try {
-      files = await readdir(folder, { withFileTypes: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-      throw error;
-    }
-    const closedAt = lastClose.get()?.time;
-    const cutoff = Math.max(Date.now() - maxAgeMs, typeof closedAt === 'string' ? Date.parse(closedAt) : 0);
-    return files.some((file) => {
-      if (!file.isFile()) return false;
-      const match = /^caja-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z-(?:diaria|manual|turno-\d+)-[a-f0-9-]{36}\.sqlite$/.exec(file.name);
-      if (!match) return false;
-      const date = Date.parse(`${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`);
-      return date >= cutoff && date <= Date.now();
-    });
-  }
+  function target(folder: string | null, label: string, secondary = false) {
+    let status: BackupStatus = {
+      state: folder ? 'pending' : 'unconfigured', copiedAt: null, verifiedAt: null, error: null,
+    };
+    let pending: number | null | undefined;
+    let running = false;
+    let lastWarning = '';
 
-  async function drain() {
-    running = true;
-    try {
-      for (const shiftId of requested) {
-        if (shiftId !== null || !(await recentCopyExists())) {
-          const reason = shiftId === null ? 'diaria' : 'turno-' + shiftId;
-          await new Promise<void>((resolve, reject) => {
-            const worker = new Worker(new URL('./backup-file.js', import.meta.url), { workerData: { source, folder, reason } });
-            worker.once('error', reject);
-            worker.once('exit', (code) => code === 0 ? resolve() : reject(new Error('Código de salida ' + code)));
-          });
-          console.info('Copia de seguridad verificada (' + reason + ').');
+    async function drain() {
+      if (!folder) return;
+      running = true;
+      let failureMessage = secondary
+        ? 'No se pudo verificar la segunda copia. Revisa que el disco esté conectado y permita guardar archivos.'
+        : 'No se pudo verificar la copia local. Revisa el espacio y los permisos del disco de caja.';
+      try {
+        if (secondary) {
+          const [primaryPath, copyPath] = await Promise.all([
+            realpath(localFolder).catch(() => localFolder), realpath(folder).catch(() => folder),
+          ]);
+          if (comparablePath(primaryPath) === comparablePath(copyPath)) {
+            failureMessage = 'Elige una carpeta secundaria distinta de la carpeta del respaldo local.';
+            throw new Error(failureMessage);
+          }
         }
-        requested.delete(shiftId);
+        while (pending !== undefined) {
+          const shiftId = pending;
+          pending = undefined;
+          const closedAt = lastClose.get()?.time;
+          const cutoff = Math.max(Date.now() - maxAgeMs, typeof closedAt === 'string' ? Date.parse(closedAt) : 0);
+          status = { ...status, state: 'checking' };
+          try {
+            const reason = shiftId === null ? 'diaria' : 'turno-' + shiftId;
+            const copy = await verifyOrCreate(source, folder, reason, shiftId === null ? cutoff : null);
+            status = { ...copy, state: 'verified', error: null };
+            lastWarning = '';
+          } catch (error) {
+            if (pending === undefined) pending = shiftId;
+            throw error;
+          }
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'Error desconocido.';
+        if (detail !== lastWarning) console.warn('Respaldo ' + label + ': ' + detail);
+        lastWarning = detail;
+        status = { ...status, state: 'error', error: failureMessage };
+      } finally {
+        running = false;
       }
-      lastWarning = '';
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error desconocido.';
-      if (message !== lastWarning) console.warn('No se pudo guardar el respaldo. Se reintentará. ' + message);
-      lastWarning = message;
-    } finally {
-      running = false;
     }
+
+    return {
+      status: () => status,
+      request(shiftId: number | null) {
+        if (!folder) return;
+        if (shiftId !== null || pending === undefined) pending = shiftId;
+        if (!running) void drain();
+      },
+    };
   }
 
+  const local = target(localFolder, 'local');
+  const secondary = target(secondaryPath ? resolve(secondaryPath) : null, 'secundario', true);
   function request(shiftId: number | null) {
-    requested.add(shiftId);
-    if (!running) void drain();
+    local.request(shiftId);
+    secondary.request(shiftId);
   }
 
   return {
     afterClose: (shiftId: number) => request(shiftId),
+    status: () => ({ local: local.status(), secondary: secondary.status() }),
     start() {
       request(null);
       setInterval(() => request(null), retryMs).unref();

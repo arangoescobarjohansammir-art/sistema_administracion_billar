@@ -155,6 +155,10 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--ac
 .redemption-payment { margin: 0.9rem 0; }
 .redemption-payment label { margin-top: 0.55rem; }
 .cash-layout { display: grid; gap: 1.25rem; }
+.cash-backups { margin-top: 1.25rem; }
+.cash-backups dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
+.cash-backups dd { margin: 0.25rem 0 0; overflow-wrap: anywhere; }
+.cash-backups dt { font-weight: 700; }
 .cash-close h3[tabindex] { scroll-margin-block-start: calc(var(--header-size, 7.5rem) + 1rem); }
 .count-history { margin-block-start: 0.75rem; }
 .count-history summary { cursor: pointer; font-weight: 650; }

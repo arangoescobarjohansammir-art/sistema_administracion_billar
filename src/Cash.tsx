@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { cashMovements, expectedCashCounts, type CashMovementKind, type SavedCashCount } from '../shared/cash';
 import { api, message, money, useOperation } from './Accounts';
 import { BillCounter } from './CashTools';
+import { CashBackups } from './CashBackups';
 
 type Shift = {
   id: number; cashier: string; openedAt: string; openingBase: number; previousBase: number | null; openingNote: string;
@@ -446,6 +447,7 @@ export function Cash({ operatorName, onShiftChange }: { operatorName: string; on
           <Ledger detail={history} />
         </div>}
       </>}
+      <CashBackups refresh={dashboard?.recent[0]?.id ?? 0} />
     </section>
   );
 }
