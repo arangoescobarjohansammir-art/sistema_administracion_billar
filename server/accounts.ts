@@ -11,6 +11,7 @@ const maxMoney = 1_000_000_000;
 
 type Payment = { cash: number; transfer: number; tokens: number };
 type SaleItem = { productId: number; quantity: number; unitPrice: number };
+type CreditShare = { accountId: number; amount: number };
 
 export function whole(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
@@ -49,6 +50,24 @@ export class ValidationError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
+export function creditShares(value: unknown, owner: number | null, remaining: number): CreditShare[] {
+  if (value === undefined) return [];
+  if (owner !== null || !Array.isArray(value) || value.length !== 2) {
+    throw new ValidationError(400, 'Elige dos cuentas para repartir el saldo fiado.');
+  }
+  const shares = value.map((entry) => {
+    const { accountId, amount } = record(entry) ?? {};
+    if (!whole(accountId, 1, Number.MAX_SAFE_INTEGER) || !whole(amount, 1, maxMoney)) {
+      throw new ValidationError(400, 'Indica la cuenta y el importe positivo de cada parte.');
+    }
+    return { accountId, amount };
+  });
+  if (shares[0].accountId === shares[1].accountId || shares[0].amount + shares[1].amount !== remaining) {
+    throw new ValidationError(400, 'Usa dos cuentas distintas. Sus importes deben sumar el saldo por fiar.');
+  }
+  return shares;
+}
+
 export function createAccounts(database: DatabaseSync, audit?: Audit) {
   database.exec([
     'CREATE TABLE IF NOT EXISTS customer_accounts (',
@@ -83,6 +102,11 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     '  sale_id INTEGER PRIMARY KEY REFERENCES sales(id), created_at TEXT NOT NULL, reason TEXT NOT NULL,',
     '  stock_returned INTEGER NOT NULL CHECK (stock_returned IN (0, 1))',
     ') STRICT;',
+    'CREATE TABLE IF NOT EXISTS sale_credit_shares (',
+    '  sale_id INTEGER NOT NULL REFERENCES sales(id),',
+    '  share_sale_id INTEGER PRIMARY KEY REFERENCES sales(id)',
+    ') STRICT;',
+    'CREATE INDEX IF NOT EXISTS credit_shares_by_sale ON sale_credit_shares(sale_id);',
     'CREATE VIEW IF NOT EXISTS valid_sales AS SELECT * FROM sales WHERE id NOT IN (SELECT sale_id FROM sale_voids);',
     'CREATE VIEW IF NOT EXISTS valid_account_payments AS SELECT * FROM account_payments',
     '  WHERE sale_id IS NULL OR sale_id NOT IN (SELECT sale_id FROM sale_voids);',
@@ -169,6 +193,28 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     database.prepare('INSERT INTO sale_allocated_lines (sale_id, label, amount) VALUES (?, ?, ?)').run(saleId, label, amount);
   }
 
+  function recordCreditShares(saleId: number, shares: CreditShare[], products: string, createdAt: string) {
+    const link = database.prepare('INSERT INTO sale_credit_shares (sale_id, share_sale_id) VALUES (?, ?)');
+    for (const { accountId, amount } of shares) {
+      accountById(accountId);
+      const shareSaleId = insertSale(accountId, amount, createdAt);
+      insertAllocatedLine(shareSaleId, 'Parte fiada · venta #' + saleId + ' · ' + products, amount);
+      link.run(saleId, shareSaleId);
+    }
+  }
+
+  const creditSharesFor = database.prepare(`
+    SELECT portion.id AS saleId, portion.account_id AS accountId, customer_accounts.name, portion.total AS amount
+    FROM sale_credit_shares share JOIN sales portion ON portion.id = share.share_sale_id
+    JOIN customer_accounts ON customer_accounts.id = portion.account_id
+    WHERE share.sale_id = ? ORDER BY portion.id
+  `);
+  function readCreditShares(saleId: number) {
+    return creditSharesFor.all(saleId).map((row) => ({
+      saleId: Number(row.saleId), accountId: Number(row.accountId), name: String(row.name), amount: Number(row.amount),
+    }));
+  }
+
   async function registerSale(request: IncomingMessage, response: ServerResponse) {
     const input = await readJson(request, 12_000);
     const account = input?.accountId;
@@ -181,9 +227,13 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     const total = items.reduce((amount, item) => amount + item.quantity * item.unitPrice, 0);
     const paid = paymentTotal(payment);
     if (total > maxMoney || paid > total) throw new ValidationError(400, 'El pago supera el total o el importe es demasiado alto.');
-    if (accountId === null && paid !== total) throw new ValidationError(400, 'Selecciona una cuenta por nombre para dejar saldo pendiente.');
+    const shares = creditShares(input?.creditShares, accountId, total - paid);
+    if (accountId === null && !shares.length && paid !== total) {
+      throw new ValidationError(400, 'Selecciona una cuenta por nombre para dejar saldo pendiente.');
+    }
 
-    const result = writeOnce(input?.requestId, JSON.stringify(['sale', accountId, items, payment]), () => {
+    const fingerprint = ['sale', accountId, items, payment, ...(shares.length ? [shares] : [])];
+    const result = writeOnce(input?.requestId, JSON.stringify(fingerprint), () => {
       if (accountId !== null) accountById(accountId);
       const delivered = items.map((item) => {
         const product = findProduct(database, item.productId);
@@ -194,7 +244,7 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
         return { ...item, label };
       });
       const createdAt = new Date().toISOString();
-      const saleId = insertSale(accountId, total, createdAt);
+      const saleId = insertSale(accountId, shares.length ? paid : total, createdAt);
       for (const item of delivered) {
         const movementId = recordInventoryMovement(database, {
           productId: item.productId, units: -item.quantity, quantity: item.quantity,
@@ -205,6 +255,7 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
         ).run(saleId, item.productId, item.label, item.quantity, item.unitPrice, movementId);
       }
       if (paid) insertPayment(accountId, saleId, payment, createdAt);
+      if (shares.length) recordCreditShares(saleId, shares, delivered.map((item) => item.quantity + ' × ' + item.label).join(', '), createdAt);
       audit?.record(request, 'sale', saleId, 'Total: $' + total);
       return saleId;
     });
@@ -250,7 +301,11 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
       if (path === '/api/sales' && request.method === 'GET') {
         const sales = getSales(null);
         const paymentBySale = database.prepare(paymentsSelect + ' WHERE sale_id = ?');
-        return sendJson(response, 200, sales.map((sale) => ({ ...sale, payment: paymentBySale.get(Number(sale.id)) ?? null })));
+        return sendJson(response, 200, sales.map((sale) => {
+          const shares = readCreditShares(sale.id);
+          return { ...sale, total: shares.reduce((sum, part) => sum + part.amount, sale.total),
+            payment: paymentBySale.get(sale.id) ?? null, creditShares: shares };
+        }));
       }
       if (path === '/api/accounts' && request.method === 'GET') {
         return sendJson(response, 200, database.prepare(accountsSelect + ' ORDER BY balance DESC, name COLLATE NOCASE, id').all());
@@ -277,5 +332,6 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
       return sendJson(response, error.status, { error: error.message });
     }
   }
-  return { handle, accountById, accountForName, writeOnce, insertSale, insertPayment, insertAllocatedLine, requireShift, openBalances };
+  return { handle, accountById, accountForName, writeOnce, insertSale, insertPayment, insertAllocatedLine,
+    recordCreditShares, readCreditShares, requireShift, openBalances };
 }

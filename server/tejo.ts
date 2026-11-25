@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { courtLabel, tejoCourtsPerType, tejoProductValue, type TejoType } from '../shared/tejo.js';
-import { type createAccounts, paymentFields, paymentTotal, saleItems, ValidationError, whole } from './accounts.js';
+import { type createAccounts, creditShares, paymentFields, paymentTotal, saleItems, ValidationError, whole } from './accounts.js';
 import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
 import { flexibleTejo } from './tejo-flex.js';
@@ -137,7 +137,8 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     return roundId;
   }
 
-  function redeem(owner: number | null, round: number | null, tokens: number, allowance: number, items: Items, payment: Payment) {
+  function redeem(owner: number | null, round: number | null, tokens: number, allowance: number, items: Items, payment: Payment,
+    split?: unknown) {
     accounts.requireShift();
     if (owner !== null) accounts.accountById(owner);
     const products = items.map((item) => {
@@ -153,12 +154,18 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     const extra = Math.max(0, subtotal - allowance);
     const paid = paymentTotal(payment);
     if (paid > extra) throw new ValidationError(400, 'El pago supera el excedente del canje. La diferencia de la ficha no se devuelve.');
-    if (owner === null && paid !== extra) throw new ValidationError(400, 'Cobra todo el excedente o selecciona una cuenta para anotarlo.');
+    const shares = creditShares(split, owner, extra - paid);
+    if (owner === null && !shares.length && paid !== extra) {
+      throw new ValidationError(400, 'Cobra todo el excedente o selecciona una cuenta para anotarlo.');
+    }
     const createdAt = new Date().toISOString();
-    const saleId = extra ? accounts.insertSale(owner, extra, createdAt) : null;
+    const saleTotal = shares.length ? paid : extra;
+    const saleId = extra ? accounts.insertSale(owner, saleTotal, createdAt) : null;
     if (saleId !== null) {
-      accounts.insertAllocatedLine(saleId, 'Excedente de canje · ' + products.map((item) => item.quantity + ' × ' + item.name).join(', '), extra);
+      const description = 'Excedente de canje · ' + products.map((item) => item.quantity + ' × ' + item.name).join(', ');
+      if (saleTotal) accounts.insertAllocatedLine(saleId, description, saleTotal);
       if (paid > 0) accounts.insertPayment(owner, saleId, payment, createdAt);
+      if (shares.length) accounts.recordCreditShares(saleId, shares, description, createdAt);
     }
     const redemptionId = Number(database.prepare([
       'INSERT INTO tejo_redemptions (round_id, account_id, tokens, allowance, subtotal, extra, sale_id, created_at)',
@@ -232,7 +239,10 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
   }
 
   function physicalRedemptions() {
-    return database.prepare(redemptionSelect + ' WHERE round_id IS NULL ORDER BY tejo_redemptions.id DESC LIMIT 20').all().map(withItems);
+    return database.prepare(redemptionSelect + ' WHERE round_id IS NULL ORDER BY tejo_redemptions.id DESC LIMIT 20').all()
+      .map((redemption) => ({ ...withItems(redemption),
+        creditShares: redemption.saleId === null ? [] : accounts.readCreditShares(Number(redemption.saleId)),
+      }));
   }
 
   function overview() {
@@ -297,7 +307,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
         const owner = accountId(fields.accountId);
         const { tokens } = fields;
         if (!whole(tokens, 1, 1000)) throw new ValidationError(400, 'Indica cuántas fichas físicas recibiste.');
-        action = () => redeem(owner, null, tokens, tokens * tejoProductValue, items, payment);
+        action = () => redeem(owner, null, tokens, tokens * tejoProductValue, items, payment, fields.creditShares);
       } else {
         const match = /^\/api\/tejo\/([1-9]\d*)\/(rounds|benefits|close|record|assign|guest|flex-benefits|stake-delivery)$/.exec(path);
         if (!match || !id(Number(match[1]))) throw new ValidationError(404, 'Ruta de tejo no encontrada.');

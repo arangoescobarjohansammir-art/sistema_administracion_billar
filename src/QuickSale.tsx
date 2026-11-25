@@ -9,9 +9,13 @@ import { api, emptyPayment, label, message, MixedCreditField, money, PaymentBrea
 
 type Item = { product: Product; quantity: number };
 type Mode = 'order' | 'cash' | 'transfer' | 'tokens' | 'mixed' | 'credit';
-type RecentSale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number }[]; payment: Payment | null };
+type CreditPart = { accountId: string; amount: string };
+type CreditShare = { accountId: number; name: string; amount: number };
+type RecentSale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number }[];
+  payment: Payment | null; creditShares: CreditShare[] };
 type RecentRedemption = { id: number; tokens: number; subtotal: number; extra: number; name: string | null;
-  createdAt: string; items: { label: string; quantity: number }[] };
+  createdAt: string; items: { label: string; quantity: number }[]; creditShares: CreditShare[] };
+const emptyCreditParts = (): CreditPart[] => [{ accountId: '', amount: '' }, { accountId: '', amount: '' }];
 const normalize = (name: string) => name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
 const time = new Intl.DateTimeFormat('es-CO', { timeStyle: 'short', timeZone: 'America/Bogota' });
 const paymentOptions = [
@@ -31,6 +35,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const [mode, setMode] = useState<Mode>('order');
   const [accountId, setAccountId] = useState('');
   const [mixedCredit, setMixedCredit] = useState('');
+  const [splitCredit, setSplitCredit] = useState(false);
+  const [creditParts, setCreditParts] = useState(emptyCreditParts);
   const [payment, setPayment] = useState<PaymentInput>(emptyPayment);
   const [received, setReceived] = useState('');
   const [error, setError] = useState('');
@@ -72,13 +78,18 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const cashDue = methods.cash;
   const change = cashChange(cashDue, received);
   const remaining = due - totalPayment(methods);
+  const splitActive = mode === 'mixed' && splitCredit;
+  const partsTotal = creditParts.reduce((sum, part) => sum + Number(part.amount), 0);
+  const duplicateAccounts = Boolean(creditParts[0].accountId) && creditParts[0].accountId === creditParts[1].accountId;
+  const partsReady = remaining === partsTotal && !duplicateAccounts &&
+    creditParts.every(({ accountId, amount }) => accountId && Number.isSafeInteger(Number(amount)) && Number(amount) > 0);
   const accountRequired = mode === 'credit' || remaining > 0;
   const locked = busy || Boolean(loadError);
   const canCheckout = cashOpen === true && items.length > 0 && !locked &&
     items.every(({ quantity, product }) => Number.isInteger(quantity) && quantity >= 1 && quantity <= product.stock);
   const canConfirm = canCheckout && mode !== 'order' && remaining >= 0 &&
-    (mode !== 'mixed' || mixedCreditPlan(remaining, mixedCredit).valid) &&
-    (!accountRequired || Boolean(accountId)) &&
+    (splitActive ? partsReady : (!accountRequired || Boolean(accountId)) &&
+      (mode !== 'mixed' || mixedCreditPlan(remaining, mixedCredit).valid)) &&
     (mode !== 'tokens' || tokens > 0) && Number.isInteger(tokens) && tokens >= 0 &&
     tokens <= 1000 &&
     (cashDue <= 0 || change === null || (Number.isInteger(change) && change >= 0));
@@ -145,6 +156,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setReceived('');
     setAccountId('');
     setMixedCredit('');
+    setSplitCredit(false);
+    setCreditParts(emptyCreditParts());
     setMode('order');
   }
 
@@ -159,8 +172,13 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
 
   function completeWith(method: 'cash' | 'transfer') {
     setMixedCredit('');
+    setSplitCredit(false);
     setPayment({ ...emptyPayment, tokens, [method]: due });
     chooseMethod('mixed');
+  }
+
+  function updateCreditPart(index: number, fields: Partial<CreditPart>) {
+    setCreditParts((previous) => previous.map((part, position) => position === index ? { ...part, ...fields } : part));
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -172,14 +190,15 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setStatus('');
     try {
       const payload = {
-        accountId: accountId ? Number(accountId) : null, payment: methods,
+        accountId: !splitActive && accountId ? Number(accountId) : null, payment: methods,
+        creditShares: splitActive ? creditParts.map((part) => ({ accountId: Number(part.accountId), amount: Number(part.amount) })) : undefined,
         items: items.map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price })),
       };
       const receipt = productRedemption
         ? await write('tejo/redemptions', { ...payload, tokens })
         : await write('sales', payload);
       reset();
-      const summary = remaining > 0 ? 'Saldo fiado: ' + money.format(remaining)
+      const summary = remaining > 0 ? (splitActive ? 'Fiado repartido en dos cuentas: ' : 'Saldo fiado: ') + money.format(remaining)
         : productRedemption ? 'Cubierto con fichas: ' + money.format(coveredProducts) + ' · Cobrado: ' + money.format(due)
           : 'Total: ' + money.format(total);
       setStatus((productRedemption ? 'Canje #' + receipt.id + ' guardado. ' : 'Venta #' + receipt.id + ' guardada. ') + summary +
@@ -265,10 +284,28 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
                 </div>}
               </div>}
               {mode === 'mixed' && <PaymentFields value={payment} onChange={setPayment} showTokens={false} />}
-              {mode === 'mixed' && <MixedCreditField remaining={remaining} amount={mixedCredit} onChange={setMixedCredit}
+              {mode === 'mixed' && (remaining > 0 || splitActive) && <button type="button" className="secondary"
+                onClick={() => setSplitCredit((value) => !value)}>
+                {splitActive ? 'Usar una sola cuenta' : 'Repartir fiado en dos cuentas'}
+              </button>}
+              {mode === 'mixed' && !splitActive && <MixedCreditField remaining={remaining} amount={mixedCredit} onChange={setMixedCredit}
                 hasAccount={Boolean(accountId)} />}
-              <AccountPicker accounts={accounts} value={accountId} required={accountRequired} onChange={setAccountId}
-                label={'Cuenta del cliente' + (accountRequired ? '' : ' (opcional)')} />
+              {splitActive ? <fieldset className="sale-tender">
+                <legend>Fiado en dos cuentas</legend>
+                <p>Saldo por repartir: <strong>{money.format(Math.max(remaining, 0))}</strong></p>
+                {creditParts.map((part, index) => <div className="field-grid" key={index}>
+                  <AccountPicker accounts={accounts} label={'Cuenta ' + (index + 1)} value={part.accountId} required
+                    onChange={(accountId) => updateCreditPart(index, { accountId })} />
+                  <label>Fiado cuenta {index + 1} (COP)<input type="number" inputMode="numeric" min={1} step={1} required
+                    value={part.amount} onChange={(event) => updateCreditPart(index, { amount: event.target.value })} /></label>
+                </div>)}
+                <div aria-live="polite">
+                  {duplicateAccounts && <p role="alert">Selecciona dos cuentas distintas.</p>}
+                  {remaining > partsTotal && <p>Falta repartir <strong>{money.format(remaining - partsTotal)}</strong>.</p>}
+                  {remaining >= 0 && remaining < partsTotal && <p role="alert">Las dos partes superan el saldo fiado.</p>}
+                </div>
+              </fieldset> : <AccountPicker accounts={accounts} value={accountId} required={accountRequired} onChange={setAccountId}
+                label={'Cuenta del cliente' + (accountRequired ? '' : ' (opcional)')} />}
               {cashDue > 0 && <CashChangeField due={cashDue} received={received} onChange={setReceived} />}
               {mode === 'credit' && !accounts.length && <p>Crea una cuenta en el módulo Cuentas.</p>}
               {remaining < 0 && <p role="alert">El pago supera el total.</p>}
@@ -283,11 +320,12 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
           </div>
         </form>
       </div>
-      <details className="recent-sales"><summary>Ventas recientes sin nombre</summary>
-        {!recent.length ? <p>Sin ventas sin nombre.</p> : <ul className="ledger-list">{recent.map((sale) => (
+      <details className="recent-sales"><summary>Ventas recientes sin nombre o con fiado repartido</summary>
+        {!recent.length ? <p>Sin ventas recientes de este tipo.</p> : <ul className="ledger-list">{recent.map((sale) => (
           <li key={sale.id}><div className="row-between"><strong>Venta #{sale.id}{sale.voided ? ' · Anulada' : ''}</strong><strong>{money.format(sale.total)}</strong></div>
             <time dateTime={sale.createdAt}>{time.format(new Date(sale.createdAt))}</time>
             <p>{sale.items.map((item) => item.quantity + ' × ' + item.label).join(' · ')}</p>
+            {sale.creditShares?.map((part) => <p key={part.accountId}>{part.name} · Fiado: {money.format(part.amount)}</p>)}
             {sale.payment && <p><PaymentBreakdown payment={sale.payment} /></p>}</li>
         ))}</ul>}
       </details>
@@ -297,6 +335,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
             <strong>{money.format(entry.subtotal)}</strong></div>
             <time dateTime={entry.createdAt}>{time.format(new Date(entry.createdAt))}</time>
             <p>{entry.items.map((item) => item.quantity + ' × ' + item.label).join(' · ')}</p>
+            {entry.creditShares?.map((part) => <p key={part.accountId}>{part.name} · Fiado: {money.format(part.amount)}</p>)}
             <p>Excedente: {money.format(entry.extra)}{entry.name ? ' · ' + entry.name : ''}</p>
           </li>
         ))}</ul>}

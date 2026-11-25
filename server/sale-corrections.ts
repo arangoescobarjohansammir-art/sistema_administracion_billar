@@ -28,7 +28,12 @@ export function createSaleCorrections(database: DatabaseSync, accounts: ReturnTy
         const before = Number(new URL(request.url ?? '/', 'http://localhost').searchParams.get('before') ?? Number.MAX_SAFE_INTEGER);
         const sales = shiftId === null ? [] : database.prepare(directSales + ' AND s.id < ? ORDER BY s.id DESC LIMIT 50')
           .all(shiftId, Number.isSafeInteger(before) && before > 0 ? before : Number.MAX_SAFE_INTEGER);
-        return sendJson(response, 200, { shiftId, sales: sales.map((sale) => ({ ...sale, items: itemsForSale.all(Number(sale.id)) })) });
+        return sendJson(response, 200, { shiftId, sales: sales.map((sale) => {
+          const id = Number(sale.id);
+          const shares = accounts.readCreditShares(id);
+          return { ...sale, total: shares.reduce((sum, part) => sum + part.amount, Number(sale.total)),
+            items: itemsForSale.all(id), creditShares: shares };
+        }) });
       }
       const match = /^\/api\/corrections\/sales\/([1-9]\d*)\/void$/.exec(path);
       if (!match || request.method !== 'POST' || !Number.isSafeInteger(Number(match[1]))) {
@@ -51,6 +56,12 @@ export function createSaleCorrections(database: DatabaseSync, accounts: ReturnTy
         if (sale.accountId !== null && Number(accounts.accountById(Number(sale.accountId)).balance) < Number(sale.total) - paid) {
           throw new ValidationError(409, 'El saldo pendiente ya no cubre el fiado de esta venta. Revisa los abonos aplicados a la cuenta.');
         }
+        const shares = accounts.readCreditShares(id);
+        for (const share of shares) {
+          if (Number(accounts.accountById(share.accountId).balance) < share.amount) {
+            throw new ValidationError(409, 'El saldo de ' + share.name + ' ya no cubre su parte. Revisa los abonos de esa cuenta.');
+          }
+        }
         const totals = cash.shiftTotals(shiftId);
         if (Number(sale.cash) > 0 && Number(sale.cash) > totals.salesExpected) {
           throw new ValidationError(409, 'El efectivo de ventas es insuficiente para registrar la devolución.');
@@ -59,7 +70,9 @@ export function createSaleCorrections(database: DatabaseSync, accounts: ReturnTy
           throw new ValidationError(409, 'Revisa el conteo inicial y las fichas disponibles antes de registrar la devolución.');
         }
         const createdAt = new Date().toISOString();
-        database.prepare('INSERT INTO sale_voids VALUES (?, ?, ?, ?)').run(id, createdAt, reason, Number(stockReturned));
+        const voidSale = database.prepare('INSERT INTO sale_voids VALUES (?, ?, ?, ?)');
+        voidSale.run(id, createdAt, reason, Number(stockReturned));
+        for (const share of shares) voidSale.run(share.saleId, createdAt, reason, 0);
         if (stockReturned) {
           for (const item of itemsForSale.all(id)) {
             const productId = Number(item.productId);

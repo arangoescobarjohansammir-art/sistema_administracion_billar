@@ -7,6 +7,7 @@ type Sale = {
   id: number; customer: string | null; total: number; createdAt: string;
   cash: number | null; transfer: number | null; tokens: number | null; voidedAt: string | null;
   voidReason: string | null; stockReturned: number | null; items: { productId: number; label: string; quantity: number }[];
+  creditShares: { accountId: number; name: string; amount: number }[];
 };
 type Sales = { shiftId: number | null; sales: Sale[] };
 
@@ -151,7 +152,8 @@ function VoidForm({ sale, onDone, onCancel }: { sale: Sale; onDone: () => void; 
       </label>
       <label className="inline-check"><input type="checkbox" name="confirmed" required />
         {sale.cash || sale.transfer || sale.tokens ? 'Confirmo que devolví el pago por el medio indicado o que el cobro no llegó a realizarse.'
-          : 'Confirmo que corresponde retirar este cargo de la cuenta.'}</label>
+          : sale.creditShares.length ? 'Confirmo que corresponde retirar el cargo de ambas cuentas.'
+            : 'Confirmo que corresponde retirar este cargo de la cuenta.'}</label>
     </fieldset>
     {error && <p role="alert">{error}</p>}
     <div className="actions">
@@ -192,6 +194,7 @@ function Corrections() {
       <div className="row-between"><strong>Venta #{sale.id}{sale.voidedAt ? ' · Anulada' : ''}</strong><strong>{money.format(sale.total)}</strong></div>
       <p>{sale.customer ?? 'Sin nombre'} · {clock.format(new Date(sale.createdAt))}</p>
       <p>{sale.items.map((item) => item.quantity + ' × ' + item.label).join(' · ')}</p>
+      {sale.creditShares.map((part) => <p key={part.accountId}>{part.name} · Fiado: {money.format(part.amount)}</p>)}
       <p>Cobro registrado: {[
         sale.cash ? 'Efectivo ' + money.format(sale.cash) : '',
         sale.transfer ? 'Transferencia ' + money.format(sale.transfer) : '',

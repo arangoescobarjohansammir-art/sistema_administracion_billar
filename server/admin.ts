@@ -31,7 +31,9 @@ export function createAdminSnapshot(database: DatabaseSync, cash: Cash, accounts
   }));
   const byDay = new Map(daily.map((item) => [item.day, item]));
   for (const row of database.prepare(`
-    SELECT date(created_at, '-5 hours') AS day, COUNT(*) AS transactions, SUM(total) AS amount
+    SELECT date(created_at, '-5 hours') AS day,
+      COUNT(CASE WHEN NOT EXISTS (SELECT 1 FROM sale_credit_shares WHERE share_sale_id = valid_sales.id) THEN 1 END) AS transactions,
+      SUM(total) AS amount
     FROM valid_sales WHERE created_at >= ? GROUP BY day
   `).all(start.toISOString())) {
     const target = byDay.get(String(row.day));

@@ -150,7 +150,8 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
   function summarize(shift: ReturnType<typeof shiftById>) {
     const id = Number(shift.id);
     const sale = database.prepare([
-      'SELECT COUNT(*) AS count, COALESCE(SUM(valid_sales.total), 0) AS total',
+      'SELECT COUNT(CASE WHEN NOT EXISTS (SELECT 1 FROM sale_credit_shares WHERE share_sale_id = valid_sales.id) THEN 1 END) AS count,',
+      'COALESCE(SUM(valid_sales.total), 0) AS total',
       'FROM cash_shift_sales JOIN valid_sales ON valid_sales.id = sale_id WHERE shift_id = ?',
     ].join(' ')).get(id);
     const payment = database.prepare([

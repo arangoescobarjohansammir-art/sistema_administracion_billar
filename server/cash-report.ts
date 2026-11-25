@@ -42,6 +42,8 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
   const id = Number(data.shift.id);
   const sales = database.prepare([
     'SELECT sales.id, sales.total, sales.created_at AS createdAt, customer_accounts.name, v.reason AS voidReason,',
+    '(SELECT share.sale_id FROM sale_credit_shares share WHERE share.share_sale_id = sales.id) AS splitFrom,',
+    'EXISTS (SELECT 1 FROM sale_credit_shares share WHERE share.sale_id = sales.id) AS splitPayment,',
     "(SELECT actor_name FROM cash_audit WHERE kind = 'sale' AND target_id = sales.id ORDER BY id LIMIT 1) AS seller,",
     "(SELECT actor_name FROM cash_audit WHERE kind = 'sale_void' AND target_id = sales.id ORDER BY id LIMIT 1) AS voidedBy",
     'FROM cash_shift_sales tracked JOIN sales ON sales.id = tracked.sale_id',
@@ -61,6 +63,8 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
     return [date(sale.createdAt) + '\nVenta #' + sale.id + (sale.voidReason ? '\nAnulada' : ''),
       [
         text(sale.name ?? 'Sin nombre'), sale.seller ? 'Registró: ' + text(sale.seller) : '',
+        sale.splitPayment ? 'Parte pagada de la venta con fiado repartido' : '',
+        sale.splitFrom ? 'Parte fiada de la venta #' + text(sale.splitFrom) : '',
         ...lines, sale.voidReason ? 'Anulación: ' + text(sale.voidReason) + (sale.voidedBy ? ' · ' + text(sale.voidedBy) : '') : '',
       ].filter(Boolean).join('\n'), money(sale.total)];
   });

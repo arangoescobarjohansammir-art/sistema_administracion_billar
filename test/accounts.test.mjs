@@ -6,6 +6,60 @@ import { testServer } from './support/local-server.mjs';
 
 const none = { cash: 0, transfer: 0, tokens: 0 };
 
+test('reparte el fiado de una sola compra entre dos cuentas y registra una vez el pago y los productos', { timeout: 20000 }, async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  await server.openShift();
+  const post = (path, status, data) => server.json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
+  const one = await post('/api/accounts', 201, { name: 'Ana' });
+  const two = await post('/api/accounts', 201, { name: 'Luis' });
+  const product = await post('/api/products', 201, {
+    name: 'Botella compartida', brand: '', presentation: 'Unidad', price: 60000,
+    packageName: '', unitsPerPackage: 1, active: true,
+  });
+  const movement = '/api/products/' + product.id + '/movements';
+  await post(movement, 201, { direction: 'in', unit: 'unit', quantity: 4, reason: 'Prueba' });
+  const items = [{ productId: product.id, quantity: 1, unitPrice: 60000 }];
+  const shares = (first, second) => [{ accountId: one.id, amount: first }, { accountId: two.id, amount: second }];
+  const detail = (id) => server.json('/api/accounts/' + id, 200);
+  const totals = async () => (await server.json('/api/cash', 200)).active.totals;
+  const sale = { accountId: null, items, payment: none, creditShares: shares(40000, 20000), requestId: randomUUID() };
+  await post('/api/sales', 400, { ...sale, creditShares: shares(39000, 20000) });
+  await post('/api/sales', 400, { ...sale, creditShares: sale.creditShares.map((part) => ({ ...part, accountId: one.id })) });
+  await post('/api/sales', 404, { ...sale, creditShares: [sale.creditShares[0], { accountId: 999, amount: 20000 }] });
+  assert.equal((await server.json(movement, 200)).length, 1);
+  assert.equal((await detail(one.id)).account.balance, 0);
+  const receipt = await post('/api/sales', 201, sale);
+  assert.equal((await post('/api/sales', 200, sale)).id, receipt.id);
+  const [saved] = await server.json('/api/sales', 200);
+  assert.equal(saved.total, 60000);
+  assert.deepEqual(saved.creditShares.map(({ name, amount }) => [name, amount]), [['Ana', 40000], ['Luis', 20000]]);
+  assert.equal((await detail(one.id)).history.current.movements[0].amount, 40000);
+  assert.equal((await detail(two.id)).history.current.movements[0].amount, 20000);
+  assert.deepEqual(await totals().then(({ salesCount, salesTotal, cashReceived }) => [salesCount, salesTotal, cashReceived]), [1, 60000, 0]);
+
+  const { id: redemption } = await post('/api/tejo/redemptions', 201, {
+    accountId: null, items, tokens: 5, payment: { ...none, cash: 5000, transfer: 10000 }, creditShares: shares(15000, 10000),
+  });
+  const [savedRedemption] = await server.json('/api/tejo/redemptions', 200);
+  assert.equal(savedRedemption.id, redemption);
+  assert.deepEqual(savedRedemption.creditShares.map(({ amount }) => amount), [15000, 10000]);
+  assert.deepEqual(await totals().then(({ salesCount, salesTotal, cashReceived, transferExpected, tokensRedeemed }) =>
+    [salesCount, salesTotal, cashReceived, transferExpected, tokensRedeemed]), [2, 100000, 5000, 10000, 5]);
+  assert.deepEqual((await server.json(movement, 200)).map(({ units }) => units), [-1, -1, 4]);
+  assert.equal((await detail(one.id)).account.balance, 55000);
+  assert.equal((await detail(two.id)).account.balance, 30000);
+
+  await post('/api/corrections/sales/' + receipt.id + '/void', 201, {
+    confirmed: true, stockReturned: true, reason: 'Anular venta repartida',
+  });
+  assert.equal((await detail(one.id)).account.balance, 15000);
+  assert.equal((await detail(two.id)).account.balance, 10000);
+  assert.equal((await detail(two.id)).history.current.movements.at(-1).kind, 'void');
+  assert.deepEqual((await server.json(movement, 200)).map(({ units }) => units), [1, -1, -1, 4]);
+});
+
 test('conserva el historial con abonos parciales, archiva al saldar y recupera movimientos antiguos', { timeout: 20000 }, async (t) => {
   const server = await testServer();
   t.after(server.cleanup);
