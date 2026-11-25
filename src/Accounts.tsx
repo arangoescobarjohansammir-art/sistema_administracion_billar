@@ -6,7 +6,10 @@ export type PaymentInput = { cash: number; transfer: number; tokens: number };
 export type Payment = PaymentInput & { id: number; saleId: number | null; tokenValue: number; createdAt: string; voided?: number | null };
 type Sale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number; unitPrice: number }[] };
 type Detail = { account: Account; sales: Sale[]; payments: Payment[] };
-export type Product = { id: number; name: string; brand: string; presentation: string; price: number; active: 0 | 1; stock: number; hasPhoto: 0 | 1 };
+export type Product = {
+  id: number; name: string; brand: string; presentation: string; price: number; active: 0 | 1;
+  stock: number; hasPhoto: 0 | 1; packageName: string; unitsPerPackage: number;
+};
 
 export const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });

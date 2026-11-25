@@ -299,7 +299,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
         if (!whole(tokens, 1, 1000)) throw new ValidationError(400, 'Indica cuántas fichas físicas recibiste.');
         action = () => redeem(owner, null, tokens, tokens * tejoProductValue, items, payment);
       } else {
-        const match = /^\/api\/tejo\/([1-9]\d*)\/(rounds|benefits|close|record|assign|guest|flex-benefits)$/.exec(path);
+        const match = /^\/api\/tejo\/([1-9]\d*)\/(rounds|benefits|close|record|assign|guest|flex-benefits|stake-delivery)$/.exec(path);
         if (!match || !id(Number(match[1]))) throw new ValidationError(404, 'Ruta de tejo no encontrada.');
         const sessionId = Number(match[1]);
         switch (match[2]) {
@@ -309,6 +309,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
           case 'assign': action = () => flexible.assign(sessionId, fields); break;
           case 'guest': action = () => flexible.addPlayer(sessionId); break;
           case 'flex-benefits': action = () => flexible.fulfill(sessionId, fields); break;
+          case 'stake-delivery': action = () => flexible.deliverStake(sessionId, fields); break;
           default: action = () => close(sessionId);
         }
       }

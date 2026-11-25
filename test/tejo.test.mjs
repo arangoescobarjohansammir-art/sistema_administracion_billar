@@ -5,6 +5,74 @@ import { testServer } from './support/local-server.mjs';
 
 const noPayment = { cash: 0, transfer: 0, tokens: 0 };
 
+test('registra productos y canastas como apuesta y separa su entrega de las fichas y el cobro', { timeout: 20000 }, async (t) => {
+  const { start, stop, json, cleanup, openShift } = await testServer();
+  t.after(cleanup);
+  await start();
+  await openShift();
+  const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
+  const product = (name, price, packageName, unitsPerPackage) => post('/api/products', 201, {
+    name, price, packageName, unitsPerPackage, brand: '', presentation: 'Botella', active: true,
+  });
+  const bottle = await product('Aguardiente', 60001, '', 1);
+  const beer = await product('Cerveza', 4000, 'Canasta', 30);
+  const move = (id, direction, quantity) => post('/api/products/' + id + '/movements', 201, {
+    direction, quantity, unit: 'unit', reason: 'Inventario de prueba',
+  });
+  await move(bottle.id, 'in', 1);
+  await move(beer.id, 'in', 31);
+  const { id } = await post('/api/tejo', 201, { courtType: 'maxi', courtNumber: 1, playerCount: 4, teamSize: 2 });
+  const path = '/api/tejo/' + id;
+  const onlyProducts = { withTokens: false, issueAll: false, products: [
+    { productId: bottle.id, quantity: 1, unit: 'unit', unitsPerInput: 1, unitPrice: 60001 },
+    { productId: beer.id, quantity: 1, unit: 'package', unitsPerInput: 30, unitPrice: 4000 },
+  ] };
+  await post(path + '/record', 400, { ...onlyProducts, products: [] });
+  await post(path + '/record', 409, { ...onlyProducts, products: [{ ...onlyProducts.products[1], unitsPerInput: 24 }] });
+  const wager = await post(path + '/record', 201, onlyProducts);
+  const mixed = await post(path + '/record', 201, { withTokens: true, issueAll: true, products: [
+    { ...onlyProducts.products[1], unit: 'unit', unitsPerInput: 1 },
+  ] });
+  const regular = await post(path + '/record', 201, { issueAll: true });
+  const stock = async () => Object.fromEntries((await json('/api/products', 200)).map((item) => [item.name, item.stock]));
+  assert.deepEqual(await stock(), { Aguardiente: 1, Cerveza: 31 });
+  const { active: [group] } = await json('/api/tejo', 200);
+  assert.deepEqual(group.rounds.map(({ id, total, benefits }) => [id, total, benefits.length]), [
+    [regular.id, 16000, 4], [mixed.id, 20000, 4], [wager.id, 180001, 0],
+  ]);
+  await post(path + '/flex-benefits', 404, { roundId: wager.id, playerId: group.players[0].id, choice: 'token' });
+  const members = (start) => group.players.slice(start, start + 2)
+    .map((player, index) => ({ playerId: player.id, name: 'Jugador de prueba ' + (start + index + 1) }));
+  const lossesA = [{ team: 'A', count: 1, players: members(0) }];
+  const lossesB = [{ team: 'B', count: 1, players: members(2) }];
+  await post(path + '/assign', 400, { roundId: regular.id, losses: lossesA });
+  await post(path + '/assign', 201, { losses: lossesA });
+  await post(path + '/assign', 400, { losses: lossesB });
+  await post(path + '/assign', 201, { roundId: mixed.id, losses: lossesB });
+  await post(path + '/assign', 201, { roundId: wager.id, losses: lossesA });
+  assert.deepEqual((await json('/api/accounts', 200)).map(({ balance }) => balance), [98001, 98000, 10000, 10000]);
+  await post(path + '/close', 409, {});
+
+  await move(beer.id, 'out', 2);
+  await post(path + '/stake-delivery', 409, { roundId: wager.id });
+  assert.deepEqual(await stock(), { Aguardiente: 1, Cerveza: 29 });
+  await move(beer.id, 'in', 2);
+  const delivery = { roundId: wager.id, requestId: randomUUID() };
+  await post(path + '/stake-delivery', 201, delivery);
+  await post(path + '/stake-delivery', 200, delivery);
+  await post(path + '/stake-delivery', 409, { roundId: wager.id });
+  await post(path + '/stake-delivery', 201, { roundId: mixed.id });
+  assert.deepEqual(await stock(), { Aguardiente: 0, Cerveza: 0 });
+  await post(path + '/close', 201, {});
+  await stop();
+  await start();
+  const { recent: [archived] } = await json('/api/tejo', 200);
+  assert.ok(archived.rounds.filter(({ stake }) => stake.length > 0)
+    .every(({ stake }) => stake.every(({ movementId }) => movementId !== null)));
+  const { totals } = (await json('/api/cash', 200)).active;
+  assert.deepEqual([totals.salesTotal, totals.tokensIssued, totals.cashReceived], [216001, 8, 0]);
+});
+
 test('reparte los chicos pendientes entre los integrantes del equipo perdedor', { timeout: 20000 }, async (t) => {
   const { start, stop, json, cleanup, openShift } = await testServer();
   t.after(cleanup);

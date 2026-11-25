@@ -3,7 +3,7 @@ import { cashChange, mixedCreditPlan } from '../shared/tender';
 import { CashChangeField } from './CashTools';
 import { AccountPicker, CustomerLookup } from './CustomerLookup';
 import { ConsumptionProducts, ProductLookup } from './ProductPicker';
-import { courtLabel, tejoCourtsPerType, tejoProductValue, tejoTeams, tejoTypes, type TejoTeam, type TejoType } from '../shared/tejo';
+import { courtLabel, tejoCourtsPerType, tejoProductValue, tejoShare, tejoTeams, tejoTypes, type TejoTeam, type TejoType } from '../shared/tejo';
 import { api, emptyPayment, label, message, MixedCreditField, money, PaymentFields, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
 
@@ -13,9 +13,11 @@ type Redemption = {
   createdAt: string; items: { label: string; quantity: number; unitPrice: number }[];
 };
 type Benefit = { accountId: number; customerId?: number | null; name: string; issuedAt: string | null; redemption: Redemption | null };
+type Stake = { productId: number; label: string; quantity: number; unitsPerInput: number; inputUnit: string; unitPrice: number; movementId: number | null };
 type Round = {
   id: number; number: number; loser: string | null; loserId: number | null; total: number; benefits: Benefit[]; flexible?: boolean;
   losingTeam?: TejoTeam | null; charges?: { playerId: number; name: string; amount: number }[];
+  playerCount?: number; stake?: Stake[];
 };
 type Group = { id: number; courtType: TejoType; courtNumber: number; flexible?: boolean; teamSize?: number; players: Player[]; rounds: Round[] };
 type RedeemEntry = { groupId: number; roundId: number; player: Benefit; flexible?: boolean };
@@ -24,6 +26,8 @@ type Action = (path: string, payload: object, success: string) => Promise<boolea
 type Basket = { product: Product; quantity: number }[];
 
 const isPending = (round: Round) => round.loser === null && !round.losingTeam;
+const hasStake = (round: Round) => Boolean(round.stake?.length);
+const stakePending = (round: Round) => Boolean(round.stake?.some((item) => item.movementId === null));
 const teamPlayers = (players: Player[], size: number, team: TejoTeam) =>
   team === 'A' ? players.slice(0, size) : players.slice(size);
 
@@ -56,6 +60,81 @@ function IssueAllTokens({ checked, onChange, canIssueAll, locked }: {
       Ya entregué una ficha a cada jugador de este chico</label>
     {!canIssueAll && <p>Puedes registrar el chico y dejar la entrega de fichas pendiente.</p>}
   </>;
+}
+
+type StakeDraft = { product: Product; unit: 'unit' | 'package'; quantity: number };
+const stakeUnits = ({ product, unit }: StakeDraft) => unit === 'package' ? product.unitsPerPackage : 1;
+
+function RecordStake({ group, products, locked, act, availableTokens }: {
+  group: Group; products: Product[]; locked: boolean; act: Action; availableTokens: number | null;
+}) {
+  const [mode, setMode] = useState('tokens');
+  const [issueAll, setIssueAll] = useState(false);
+  const [query, setQuery] = useState('');
+  const [items, setItems] = useState<StakeDraft[]>([]);
+  const withTokens = mode !== 'products';
+  const withProducts = mode !== 'tokens';
+  const canIssueAll = (availableTokens ?? 0) >= group.players.length;
+  const productsTotal = items.reduce((sum, item) => sum + item.quantity * stakeUnits(item) * item.product.price, 0);
+  const tokensTotal = withTokens ? group.players.length * tejoProductValue : 0;
+  const total = tokensTotal + (withProducts ? productsTotal : 0);
+  const ready = !locked && total >= (group.teamSize || 1) && total <= 1_000_000_000 &&
+    (!withProducts || (items.length > 0 && items.every((item) => Number.isInteger(item.quantity) &&
+      item.quantity > 0 && item.quantity * stakeUnits(item) <= item.product.stock)));
+  const unavailable = (product: Product) => items.length >= 50 || items.some((item) => item.product.id === product.id);
+  function add(product: Product) {
+    if (!locked && !unavailable(product)) setItems((previous) => [...previous, { product, unit: 'unit', quantity: 1 }]);
+  }
+  function update(id: number, fields: Partial<StakeDraft>) {
+    setItems((previous) => previous.map((item) => item.product.id === id ? { ...item, ...fields } : item));
+  }
+  async function record() {
+    if (!ready) return;
+    const saved = await act('tejo/' + group.id + '/record', {
+      withTokens, issueAll: withTokens && canIssueAll && issueAll,
+      products: withProducts ? items.map((item) => ({
+        productId: item.product.id, unit: item.unit, quantity: item.quantity, unitPrice: item.product.price, unitsPerInput: stakeUnits(item),
+      })) : undefined,
+    }, 'Chico registrado. Puedes asignar quién perdió después.');
+    if (saved) {
+      setIssueAll(false);
+      setItems([]);
+      setQuery('');
+      setMode('tokens');
+    }
+  }
+
+  return <fieldset className="plain-fieldset" disabled={locked}>
+    <label>Apuesta del chico<select value={mode} onChange={(event) => setMode(event.target.value)}>
+      <option value="tokens">Fichas</option>
+      <option value="products">Solo productos</option>
+      <option value="mixed">Productos y fichas</option>
+    </select></label>
+    {withProducts && <>
+      <ProductLookup products={products.filter((product) => !unavailable(product))} query={query} onQueryChange={setQuery} onChoose={add} />
+      <ConsumptionProducts key={query} products={products} query={query} action="Agregar" onChoose={add} unavailable={unavailable} />
+      {items.length > 0 && <ul className="cart-list">{items.map((item) => {
+        const { product, quantity, unit } = item;
+        const units = stakeUnits(item);
+        return <li key={product.id}>
+          <div><strong>{label(product)}</strong><p>{money.format(quantity * units * product.price)}</p></div>
+          {product.packageName && <label>Unidad<select aria-label={'Unidad de ' + product.name} value={unit}
+            onChange={(event) => update(product.id, { unit: event.target.value === 'package' ? 'package' : 'unit', quantity: 1 })}>
+            <option value="unit">Unidad</option>
+            <option value="package" disabled={product.unitsPerPackage > product.stock}>{product.packageName} ({product.unitsPerPackage} unidades)</option>
+          </select></label>}
+          <label>Cantidad<input aria-label={'Cantidad de ' + product.name} type="number" min={1} max={Math.floor(product.stock / units)}
+            step={1} inputMode="numeric" value={quantity || ''} onChange={(event) => update(product.id, { quantity: Number(event.target.value) })} /></label>
+          <button type="button" className="secondary" aria-label={'Quitar ' + product.name}
+            onClick={() => setItems((previous) => previous.filter((line) => line.product.id !== product.id))}>Quitar</button>
+        </li>;
+      })}</ul>}
+      <p>Productos: <strong>{money.format(productsTotal)}</strong>{withTokens && <> · Fichas: <strong>{money.format(tokensTotal)}</strong></>}
+        {' · Total del chico: '}<strong>{money.format(total)}</strong></p>
+    </>}
+    {withTokens && <IssueAllTokens checked={issueAll} onChange={setIssueAll} canIssueAll={canIssueAll} locked={locked} />}
+    <button type="button" disabled={!ready} onClick={() => void record()}>Registrar chico {group.rounds.length + 1}</button>
+  </fieldset>;
 }
 
 function AssignTeamLosses({ group, size, accounts, locked, act, pending }: {
@@ -108,14 +187,12 @@ function AssignTeamLosses({ group, size, accounts, locked, act, pending }: {
   </form>;
 }
 
-function RecordChicos({ group, accounts, locked, act, availableTokens }: {
-  group: Group; accounts: Account[]; locked: boolean; act: Action; availableTokens: number | null;
+function RecordChicos({ group, accounts, products, locked, act, availableTokens }: {
+  group: Group; accounts: Account[]; products: Product[]; locked: boolean; act: Action; availableTokens: number | null;
 }) {
-  const [issueAll, setIssueAll] = useState(false);
-  const canIssueAll = (availableTokens ?? 0) >= group.players.length;
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [names, setNames] = useState<Record<number, string>>({});
-  const pending = group.rounds.filter(isPending);
+  const pending = group.rounds.filter((round) => isPending(round) && !hasStake(round));
   const size = group.teamSize ?? 0;
   const total = Object.values(counts).reduce((sum, count) => sum + Number(count), 0);
   const missingName = group.players.some((player) => Number(counts[player.id]) > 0 && player.accountId === null && !names[player.id]?.trim());
@@ -143,11 +220,7 @@ function RecordChicos({ group, accounts, locked, act, availableTokens }: {
           <p>{teamPlayers(group.players, size, team).map(({ name }) => name).join(' · ')}</p>
         </div>)}
       </div> : <p>{group.players.map((player) => player.name + ' (' + group.rounds.filter((round) => round.loserId === player.id).length + ' perdidos)').join(' · ')}</p>}
-      <IssueAllTokens checked={issueAll} onChange={setIssueAll} canIssueAll={canIssueAll} locked={locked} />
-      <button type="button" disabled={locked} onClick={async () => {
-        if (await act(base + '/record', { issueAll: canIssueAll && issueAll },
-          'Chico registrado. Puedes asignar quién perdió después.')) setIssueAll(false);
-      }}>Registrar chico {group.rounds.length + 1}</button>
+      <RecordStake group={group} products={products} locked={locked} act={act} availableTokens={availableTokens} />
     </div>
     {pending.length > 0 && (size ? <AssignTeamLosses group={group} size={size} accounts={accounts}
       locked={locked} act={act} pending={pending.length} /> : <form onSubmit={save}>
@@ -327,8 +400,51 @@ function RedeemedProducts({ redemption }: { redemption: Redemption }) {
   ))}</ul>;
 }
 
-function RoundHistory({ group, locked, onRedeem, act, availableTokens }: {
-  group: Group; locked?: boolean; onRedeem?: (round: Round, player: Benefit) => void; act?: Action; availableTokens?: number | null;
+function AssignStakedRound({ group, round, accounts, locked, act }: {
+  group: Group; round: Round; accounts: Account[]; locked?: boolean; act: Action;
+}) {
+  const [loser, setLoser] = useState('');
+  const [names, setNames] = useState<Record<number, string>>({});
+  const size = group.teamSize || 0;
+  const players = group.players.slice(0, round.playerCount);
+  const selectedTeam = loser === 'A' || loser === 'B' ? loser : null;
+  const payers = size && selectedTeam ? teamPlayers(players, size, selectedTeam)
+    : players.filter((player) => String(player.id) === loser);
+  const ready = payers.length > 0 && payers.every(({ id, accountId }) => accountId !== null || Boolean(names[id]?.trim()));
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (locked || !ready) return;
+    const identified = payers.map(({ id }) => ({ playerId: id, name: names[id] }));
+    const losses = selectedTeam ? [{ team: selectedTeam, count: 1, players: identified }] : [{ ...identified[0], count: 1 }];
+    void act('tejo/' + group.id + '/assign', { roundId: round.id, losses }, 'Perdedor asignado. Los cargos quedaron en Cuentas.');
+  }
+
+  return <details className="space-above">
+    <summary>Asignar perdedor del chico {round.number}</summary>
+    <form onSubmit={save}>
+      <fieldset className="plain-fieldset" disabled={locked}>
+        <label>{size ? 'Equipo perdedor' : 'Jugador perdedor'}<select value={loser} required onChange={(event) => setLoser(event.target.value)}>
+          <option value="">Seleccionar</option>
+          {size ? tejoTeams.map((team) => <option key={team} value={team}>Equipo {team}</option>)
+            : players.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
+        </select></label>
+        <div className="field-grid">{payers.map((player, index) => <div key={player.id}>
+          <p><strong>{player.name}</strong> · {money.format(tejoShare(round.total, payers.length, index))}</p>
+          {player.accountId === null && <CustomerLookup accounts={accounts} label={'Nombre de ' + player.name.toLowerCase()}
+            text={names[player.id] ?? ''} required
+            onTextChange={(name) => setNames((previous) => ({ ...previous, [player.id]: name }))}
+            onChoose={({ name }) => setNames((previous) => ({ ...previous, [player.id]: name }))} />}
+        </div>)}</div>
+        <button disabled={!ready}>Guardar perdedor del chico {round.number}</button>
+      </fieldset>
+    </form>
+  </details>;
+}
+
+function RoundHistory({ group, accounts = [], locked, onRedeem, act, availableTokens }: {
+  group: Group; accounts?: Account[]; locked?: boolean; onRedeem?: (round: Round, player: Benefit) => void;
+  act?: Action; availableTokens?: number | null;
 }) {
   if (!group.rounds.length) return <p>Sin chicos registrados.</p>;
   return (
@@ -340,7 +456,19 @@ function RoundHistory({ group, locked, onRedeem, act, availableTokens }: {
         {Boolean(round.charges?.length) && <ul className="sale-lines" aria-label="Cargos del equipo perdedor">
           {round.charges?.map(({ playerId, name, amount }) => <li key={playerId}><span>{name}</span><strong>{money.format(amount)}</strong></li>)}
         </ul>}
-        <details className="space-above"><summary>Fichas y consumos · {round.benefits.filter((benefit) => !benefit.issuedAt && !benefit.redemption).length} pendientes</summary>
+        {hasStake(round) && <>
+          <ul className="sale-lines" aria-label="Productos apostados">{round.stake?.map((item) => <li key={item.productId}>
+            <span>{item.quantity} × {item.inputUnit} · {item.label}
+              {item.unitsPerInput > 1 && ' (' + item.quantity * item.unitsPerInput + ' unidades)'}</span>
+            <strong>{money.format(item.quantity * item.unitsPerInput * item.unitPrice)}</strong>
+          </li>)}</ul>
+          {stakePending(round) ? act && <button type="button" className="secondary" disabled={locked}
+            onClick={() => void act('tejo/' + group.id + '/stake-delivery', { roundId: round.id }, 'Productos de la apuesta entregados.')}>
+            Registrar entrega de la apuesta del chico {round.number}
+          </button> : <p>Productos de la apuesta entregados.</p>}
+          {isPending(round) && act && <AssignStakedRound group={group} round={round} accounts={accounts} locked={locked} act={act} />}
+        </>}
+        {round.benefits.length > 0 && <details className="space-above"><summary>Fichas y consumos · {round.benefits.filter((benefit) => !benefit.issuedAt && !benefit.redemption).length} pendientes</summary>
         <ul className="tejo-benefits">{round.benefits.map((benefit) => (
           <li key={benefit.accountId}>
             <div className="row-between"><strong>{benefit.name}</strong>
@@ -356,7 +484,7 @@ function RoundHistory({ group, locked, onRedeem, act, availableTokens }: {
               <button className="secondary" type="button" disabled={locked} onClick={() => onRedeem(round, benefit)}>Registrar consumo</button>
             </div>}
           </li>
-        ))}</ul></details>
+        ))}</ul></details>}
       </li>
     ))}</ul>
   );
@@ -421,6 +549,7 @@ export function Tejo() {
   const benefits = group?.rounds.flatMap((round) => round.benefits) ?? [];
   const pending = benefits.filter((benefit) => !benefit.issuedAt && !benefit.redemption).length;
   const pendingResults = group?.rounds.filter(isPending).length ?? 0;
+  const pendingStakes = group?.rounds.some(stakePending) ?? false;
 
   return (
     <section aria-labelledby="tejo-title">
@@ -454,18 +583,19 @@ export function Tejo() {
               <p>{overview.availableTokens === null
                 ? 'Registra el conteo inicial en Caja para habilitar la entrega de fichas.'
                 : <>Fichas disponibles en caja: <strong>{overview.availableTokens}</strong></>}</p>
-              {group.flexible ? <RecordChicos key={group.id} group={group} locked={locked} act={act} accounts={accounts}
+              {group.flexible ? <RecordChicos key={group.id} group={group} locked={locked} act={act} accounts={accounts} products={products}
                 availableTokens={overview.availableTokens} />
                 : <RegisterRound key={group.id} group={group} locked={locked} act={act} availableTokens={overview.availableTokens} />}
               {redemption && redemption.groupId === group.id && <RedeemForm key={String(redemption.flexible) + ':' + redemption.roundId + ':' + redemption.player.accountId}
                 entry={redemption} accounts={accounts} products={products} locked={locked} act={act} onCancel={() => setRedemption(null)} />}
-              <RoundHistory group={group} locked={locked} act={act} availableTokens={overview.availableTokens}
+              <RoundHistory group={group} accounts={accounts} locked={locked} act={act} availableTokens={overview.availableTokens}
                 onRedeem={(round, player) => {
                   setError(''); setStatus(''); setRedemption({ groupId: group.id, roundId: round.id, player, flexible: round.flexible });
                 }} />
-              <button className="secondary" disabled={locked || pending > 0 || pendingResults > 0}
+              <button className="secondary" disabled={locked || pending > 0 || pendingResults > 0 || pendingStakes}
                 onClick={() => void act('tejo/' + group.id + '/close', {}, 'Grupo cerrado. Cancha libre.')}>Cerrar grupo y liberar cancha</button>
               {pending > 0 && <p>Registra los derechos pendientes para liberar la cancha.</p>}
+              {pendingStakes && <p>Confirma la entrega de los productos apostados para liberar la cancha.</p>}
               {pendingResults > 0 && <p>Asigna los chicos perdidos para liberar la cancha.</p>}
             </>}
         </section>

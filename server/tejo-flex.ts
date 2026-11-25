@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { courtLabel, tejoCourtsPerType, tejoPlayerTeam, tejoProductValue, type TejoTeam, type TejoType } from '../shared/tejo.js';
+import { courtLabel, tejoCourtsPerType, tejoPlayerTeam, tejoProductValue, tejoShare, type TejoTeam, type TejoType } from '../shared/tejo.js';
 import { type createAccounts, paymentFields, paymentTotal, record, saleItems, ValidationError, whole } from './accounts.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
 
@@ -42,6 +42,13 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     '  round_id INTEGER NOT NULL REFERENCES tejo_team_results(round_id),',
     '  slot_id INTEGER NOT NULL REFERENCES tejo_slots(id), sale_id INTEGER NOT NULL UNIQUE REFERENCES sales(id),',
     '  PRIMARY KEY (round_id, slot_id)',
+    ') STRICT;',
+    'CREATE TABLE IF NOT EXISTS tejo_round_products (',
+    '  round_id INTEGER NOT NULL REFERENCES tejo_played(id), product_id INTEGER NOT NULL REFERENCES products(id),',
+    '  label TEXT NOT NULL, quantity INTEGER NOT NULL CHECK (quantity > 0),',
+    '  units_per_input INTEGER NOT NULL CHECK (units_per_input > 0), input_unit TEXT NOT NULL,',
+    '  unit_price INTEGER NOT NULL CHECK (unit_price >= 0), movement_id INTEGER UNIQUE REFERENCES inventory_movements(id),',
+    '  PRIMARY KEY (round_id, product_id)',
     ') STRICT;',
   ].join('\n'));
 
@@ -113,21 +120,100 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     return Number(database.prepare('INSERT INTO tejo_slots (session_id, number) VALUES (?, ?)').run(session, number).lastInsertRowid);
   }
 
+  function stakeProducts(value: unknown) {
+    if (value === undefined) return [];
+    if (!Array.isArray(value) || value.length > 50) throw new ValidationError(400, 'Revisa los productos de la apuesta.');
+    const seen = new Set<number>();
+    return value.map((entry) => {
+      const { productId, quantity, unit, unitPrice, unitsPerInput } = record(entry) ?? {};
+      if (!isId(productId) || seen.has(productId) || !whole(quantity, 1, 1_000_000) || (unit !== 'unit' && unit !== 'package')) {
+        throw new ValidationError(400, 'Elige cada producto una vez e indica su cantidad.');
+      }
+      seen.add(productId);
+      const product = findProduct(database, productId);
+      const multiplier = unit === 'package' ? Number(product?.unitsPerPackage) : 1;
+      if (!product?.active || (unit === 'package' && !product.packageName) || multiplier !== unitsPerInput || product.price !== unitPrice) {
+        throw new ValidationError(409, 'Cambió el precio, el empaque o la disponibilidad. Actualiza los productos de la apuesta.');
+      }
+      if (quantity * multiplier > Number(product.stock)) throw new ValidationError(409, 'No hay existencias suficientes para ' + product.name + '.');
+      return {
+        productId, quantity, unitsPerInput: multiplier, unitPrice: Number(product.price),
+        inputUnit: unit === 'package' ? String(product.packageName) : 'unidad',
+        label: [product.name, product.brand, product.presentation].filter(Boolean).join(' · '),
+      };
+    });
+  }
+
   function play(session: number, fields: Record<string, unknown>) {
     open(session);
     accounts.requireShift();
     if (typeof fields.issueAll !== 'boolean') throw new ValidationError(400, 'Indica si las fichas se entregaron.');
+    const withTokens = fields.withTokens === undefined ? true : fields.withTokens;
+    if (typeof withTokens !== 'boolean' || (!withTokens && fields.issueAll)) {
+      throw new ValidationError(400, 'Indica si el chico incluye fichas.');
+    }
     const players = roster(session);
+    const items = stakeProducts(fields.products);
+    const rate = withTokens ? tejoProductValue : 0;
+    const total = items.reduce((sum, item) => sum + item.quantity * item.unitsPerInput * item.unitPrice, players.length * rate);
+    if (total < Math.max(1, teamSizeFor(session)) || total > 1_000_000_000) {
+      throw new ValidationError(400, 'La apuesta debe tener un valor suficiente para cada perdedor y estar dentro del límite.');
+    }
     const now = new Date().toISOString();
     const round = Number(database.prepare([
       'INSERT INTO tejo_played (session_id, number, rate, player_count, created_at)',
       'VALUES (?, MAX(COALESCE((SELECT MAX(number) FROM tejo_played WHERE session_id = ?), 0),',
       'COALESCE((SELECT MAX(number) FROM tejo_rounds WHERE session_id = ?), 0)) + 1, ?, ?, ?)',
-    ].join(' ')).run(session, session, session, tejoProductValue, players.length, now).lastInsertRowid);
-    const benefit = database.prepare('INSERT INTO tejo_slot_benefits (round_id, slot_id, issued_at) VALUES (?, ?, ?)');
-    const issuedAt = fields.issueAll && (availableTokens() ?? 0) >= players.length ? now : null;
-    for (const player of players) benefit.run(round, Number(player.id), issuedAt);
+    ].join(' ')).run(session, session, session, rate, players.length, now).lastInsertRowid);
+    const insertItem = database.prepare([
+      'INSERT INTO tejo_round_products (round_id, product_id, label, quantity, units_per_input, input_unit, unit_price)',
+      'VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ].join(' '));
+    for (const item of items) insertItem.run(round, item.productId, item.label, item.quantity, item.unitsPerInput, item.inputUnit, item.unitPrice);
+    if (withTokens) {
+      const benefit = database.prepare('INSERT INTO tejo_slot_benefits (round_id, slot_id, issued_at) VALUES (?, ?, ?)');
+      const issuedAt = fields.issueAll && (availableTokens() ?? 0) >= players.length ? now : null;
+      for (const player of players) benefit.run(round, Number(player.id), issuedAt);
+    }
     return round;
+  }
+
+  const productsByRound = database.prepare([
+    'SELECT product_id AS productId, label, quantity, units_per_input AS unitsPerInput, input_unit AS inputUnit,',
+    'unit_price AS unitPrice, movement_id AS movementId FROM tejo_round_products WHERE round_id = ? ORDER BY rowid',
+  ].join(' '));
+  function stakeDescription(roundId: number | null) {
+    if (roundId === null) return '';
+    const parts = productsByRound.all(roundId).map(({ quantity, inputUnit, label }) => quantity + ' ' + inputUnit + ' de ' + label);
+    return ' · apuesta: ' + parts.join(', ');
+  }
+
+  function deliverStake(session: number, fields: Record<string, unknown>) {
+    open(session);
+    accounts.requireShift();
+    const { roundId } = fields;
+    if (!isId(roundId)) throw new ValidationError(400, 'Selecciona un chico.');
+    const round = database.prepare('SELECT number FROM tejo_played WHERE id = ? AND session_id = ?').get(roundId, session);
+    if (!round) throw new ValidationError(404, 'No se encontró ese chico en la cancha.');
+    const products = productsByRound.all(roundId);
+    if (!products.length || products.some(({ movementId }) => movementId !== null)) {
+      throw new ValidationError(409, 'Este chico no tiene productos pendientes de entregar.');
+    }
+    const now = new Date().toISOString();
+    const delivered = database.prepare('UPDATE tejo_round_products SET movement_id = ? WHERE round_id = ? AND product_id = ?');
+    for (const item of products) {
+      const productId = Number(item.productId);
+      const units = Number(item.quantity) * Number(item.unitsPerInput);
+      if (Number(findProduct(database, productId)?.stock) < units) {
+        throw new ValidationError(409, 'No hay existencias suficientes para entregar ' + item.label + '.');
+      }
+      const movementId = recordInventoryMovement(database, {
+        productId, units: -units, quantity: Number(item.quantity), unitsPerInput: Number(item.unitsPerInput),
+        inputUnit: String(item.inputUnit), reason: 'Tejo · apuesta · chico ' + round.number + ' · grupo #' + session, createdAt: now,
+      });
+      delivered.run(movementId, roundId, productId);
+    }
+    return roundId;
   }
 
   function assignOwner(sessionId: number, player: ReturnType<typeof roster>[number], name: unknown, accountId: unknown) {
@@ -145,14 +231,18 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     'FROM tejo_played played LEFT JOIN tejo_team_results result ON result.round_id = played.id',
     'WHERE played.session_id = ? AND played.loser_slot IS NULL AND result.round_id IS NULL',
   ].join(' ');
+  const hasProducts = 'EXISTS (SELECT 1 FROM tejo_round_products WHERE round_id = played.id)';
+  const assignmentScope = ' AND ((? IS NULL AND NOT ' + hasProducts + ') OR (played.id = ? AND ' + hasProducts + '))';
+  const roundTotal = 'played.rate * played.player_count + COALESCE((' +
+    'SELECT SUM(quantity * units_per_input * unit_price) FROM tejo_round_products WHERE round_id = played.id), 0)';
 
-  function assignTeams(sessionId: number, teamSize: number, heading: string, fields: Record<string, unknown>) {
+  function assignTeams(sessionId: number, teamSize: number, heading: string, fields: Record<string, unknown>, roundId: number | null) {
     if (!Array.isArray(fields.losses) || !fields.losses.length || fields.losses.length > 2) {
       throw new ValidationError(400, 'Indica cuántos chicos perdió al menos un equipo.');
     }
     const players = roster(sessionId);
-    const rounds = database.prepare('SELECT played.id, played.number, rate, player_count AS playerCount ' +
-      pendingRounds + ' ORDER BY played.number').all(sessionId);
+    const rounds = database.prepare('SELECT played.id, played.number, ' + roundTotal + ' AS total ' +
+      pendingRounds + assignmentScope + ' ORDER BY played.number').all(sessionId, roundId, roundId);
     const seen = new Set<TejoTeam>();
     const losses = fields.losses.map((value) => {
       const { team, count, players: names } = record(value) ?? {};
@@ -179,6 +269,7 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     const result = database.prepare('INSERT INTO tejo_team_results (round_id, losing_team) VALUES (?, ?)');
     const charge = database.prepare('INSERT INTO tejo_team_charges (round_id, slot_id, sale_id) VALUES (?, ?, ?)');
     const now = new Date().toISOString();
+    const description = stakeDescription(roundId);
     let offset = 0;
     for (const { team, count, members, namesByPlayer } of losses) {
       const owners = members.map((player) => {
@@ -186,13 +277,14 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
         return { slotId: Number(player.id), owner: assignOwner(sessionId, player, info?.name, info?.accountId) };
       });
       for (const round of rounds.slice(offset, offset + count)) {
-        const roundId = Number(round.id);
-        const amount = Number(round.rate) * Number(round.playerCount) / teamSize;
-        result.run(roundId, team);
-        for (const { slotId, owner } of owners) {
+        const id = Number(round.id);
+        const total = Number(round.total);
+        result.run(id, team);
+        for (const [index, { slotId, owner }] of owners.entries()) {
+          const amount = tejoShare(total, teamSize, index);
           const saleId = accounts.insertSale(owner, amount, now);
-          accounts.insertAllocatedLine(saleId, heading + ' · chico ' + round.number + ' · equipo ' + team + ' · grupo #' + sessionId, amount);
-          charge.run(roundId, slotId, saleId);
+          accounts.insertAllocatedLine(saleId, heading + ' · chico ' + round.number + ' · equipo ' + team + ' · grupo #' + sessionId + description, amount);
+          charge.run(id, slotId, saleId);
         }
       }
       offset += count;
@@ -202,19 +294,19 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
 
   function assign(sessionId: number, fields: Record<string, unknown>) {
     const session = open(sessionId);
+    const { roundId = null } = fields;
+    if (roundId !== null && !isId(roundId)) throw new ValidationError(400, 'Selecciona un chico.');
     const heading = courtLabel(session.courtType as TejoType, Number(session.courtNumber));
     const teamSize = teamSizeFor(sessionId);
-    if (teamSize) return assignTeams(sessionId, teamSize, heading, fields);
+    if (teamSize) return assignTeams(sessionId, teamSize, heading, fields, roundId);
     const players = roster(sessionId);
     if (!Array.isArray(fields.losses) || !fields.losses.length || fields.losses.length > players.length) {
       throw new ValidationError(400, 'Indica cuántos chicos perdió al menos un jugador.');
     }
-    const available = database.prepare([
-      'SELECT played.id, played.number, played.rate, played.player_count AS playerCount FROM tejo_played played',
-      'JOIN tejo_slot_benefits benefit ON benefit.round_id = played.id',
-      'WHERE played.session_id = ? AND played.loser_slot IS NULL AND benefit.slot_id = ? ORDER BY played.number LIMIT ?',
-    ].join(' '));
+    const available = database.prepare('SELECT played.id, played.number, ' + roundTotal + ' AS total ' +
+      pendingRounds + assignmentScope + ' AND played.player_count >= ? ORDER BY played.number LIMIT ?');
     const seen = new Set<number>();
+    const description = stakeDescription(roundId);
     const losses = fields.losses.map((entry) => {
       const { playerId, count, name, accountId } = record(entry) ?? {};
       const player = players.find((item) => item.id === playerId);
@@ -226,14 +318,14 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     }).sort((a, b) => Number(b.player.number) - Number(a.player.number));
 
     for (const entry of losses) {
-      const rounds = available.all(sessionId, entry.playerId, entry.count);
+      const rounds = available.all(sessionId, roundId, roundId, Number(entry.player.number), entry.count);
       if (rounds.length !== entry.count) throw new ValidationError(400, 'No quedan suficientes chicos pendientes en los que participó ' + entry.player.name + '.');
       const owner = assignOwner(sessionId, entry.player, entry.name, entry.accountId);
       const now = new Date().toISOString();
       for (const round of rounds) {
-        const total = Number(round.rate) * Number(round.playerCount);
+        const total = Number(round.total);
         const saleId = accounts.insertSale(owner, total, now);
-        accounts.insertAllocatedLine(saleId, heading + ' · chico ' + round.number + ' · grupo #' + sessionId, total);
+        accounts.insertAllocatedLine(saleId, heading + ' · chico ' + round.number + ' · grupo #' + sessionId + description, total);
         database.prepare('UPDATE tejo_played SET loser_slot = ?, sale_id = ? WHERE id = ?')
           .run(entry.playerId, saleId, Number(round.id));
       }
@@ -308,6 +400,10 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
       'SELECT 1 FROM tejo_slot_benefits JOIN tejo_played ON tejo_played.id = round_id',
       'WHERE session_id = ? AND issued_at IS NULL AND redeemed_at IS NULL LIMIT 1',
     ].join(' ')).get(session)) throw new ValidationError(409, 'Registra las fichas o los consumos pendientes antes de liberar la cancha.');
+    if (database.prepare([
+      'SELECT 1 FROM tejo_round_products product JOIN tejo_played played ON played.id = product.round_id',
+      'WHERE played.session_id = ? AND product.movement_id IS NULL LIMIT 1',
+    ].join(' ')).get(session)) throw new ValidationError(409, 'Registra la entrega de los productos apostados antes de liberar la cancha.');
     database.prepare('UPDATE tejo_sessions SET closed_at = ? WHERE id = ?').run(new Date().toISOString(), session);
     return session;
   }
@@ -318,7 +414,8 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     const teamSize = teamSizeFor(sessionId);
     const rows = database.prepare([
       'SELECT played.id, played.number, loser_slot AS loserId, customer_accounts.name AS loser,',
-      'rate, player_count * rate AS total, sale_id AS saleId, played.created_at AS createdAt, result.losing_team AS losingTeam',
+      'rate, player_count AS playerCount, ' + roundTotal + ' AS total, sale_id AS saleId,',
+      'played.created_at AS createdAt, result.losing_team AS losingTeam',
       'FROM tejo_played played LEFT JOIN tejo_team_results result ON result.round_id = played.id',
       'LEFT JOIN tejo_slots ON tejo_slots.id = loser_slot LEFT JOIN customer_accounts ON customer_accounts.id = tejo_slots.account_id',
       'WHERE played.session_id = ? ORDER BY played.number DESC',
@@ -337,7 +434,7 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     ].join(' '));
     return { flexible: true, teamSize, players, rounds: rows.map((round) => ({
       ...round, number: Number(round.number), flexible: true,
-      charges: round.losingTeam ? charges.all(Number(round.id)) : [],
+      charges: round.losingTeam ? charges.all(Number(round.id)) : [], stake: productsByRound.all(Number(round.id)),
       benefits: benefits.all(Number(round.id)).map((item) => ({
         accountId: item.accountId, customerId: item.customerId, name: item.name, issuedAt: item.issuedAt,
         redemption: item.redeemedAt === null ? null : {
@@ -349,5 +446,5 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
   }
 
   const hasSlots = (session: number) => Boolean(database.prepare('SELECT 1 FROM tejo_slots WHERE session_id = ? LIMIT 1').get(session));
-  return { start, addPlayer, play, assign, fulfill, close, describe, hasSlots };
+  return { start, addPlayer, play, assign, fulfill, deliverStake, close, describe, hasSlots };
 }
