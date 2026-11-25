@@ -157,7 +157,7 @@ function App({ operator, onLogout }: { operator: Operator; onLogout: () => void 
         <div hidden={section !== 'sale'}>
           <QuickSale active={section === 'sale'} cashOpen={cashOpen} onCash={() => setSection('cash')} />
         </div>
-        {section === 'catalog' && <Catalog />}
+        {section === 'catalog' && <Catalog isAdmin={operator.role === 'admin'} />}
         {section === 'accounts' && <Accounts />}
         {section === 'billiards' && <Billiards />}
         {section === 'tejo' && <Tejo />}

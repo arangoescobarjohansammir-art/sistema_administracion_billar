@@ -13,6 +13,7 @@ import { createAutomaticBackups } from './backups.js';
 import { createOperators } from './operators.js';
 import { createAudit } from './audit.js';
 import { createSaleCorrections } from './sale-corrections.js';
+import { createInventoryCounts } from './inventory-counts.js';
 import { readJson, sendJson } from './http.js';
 
 const host = '127.0.0.1';
@@ -41,6 +42,7 @@ const handleTejo = createTejo(database, accounts);
 const cash = createCash(database, accounts, (id) => backups.afterClose(id), audit);
 const backups = createAutomaticBackups(database, databasePath);
 const saleCorrections = createSaleCorrections(database, accounts, cash, audit);
+const inventoryCounts = createInventoryCounts(database, accounts, audit);
 
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -94,6 +96,9 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
   if (path === '/api/products' || path.startsWith('/api/products/')) {
     return handleCatalog(request, response, path);
+  }
+  if (path === '/api/inventory-counts' || path.startsWith('/api/inventory-counts/')) {
+    return inventoryCounts(request, response, path);
   }
   if (path === '/api/sales' || path === '/api/accounts' || path.startsWith('/api/accounts/')) {
     return accounts.handle(request, response, path);

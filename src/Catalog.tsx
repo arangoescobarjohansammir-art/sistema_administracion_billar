@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from './Accounts';
+import { InventoryCounts } from './InventoryCounts';
 
 type Product = {
   id: number;
@@ -224,7 +225,18 @@ function Inventory({ product, onMovement }: { product: Product; onMovement: (val
 
 const searchText = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 
-export function Catalog() {
+export function Catalog({ isAdmin }: { isAdmin: boolean }) {
+  const [view, setView] = useState<'products' | 'counts'>('products');
+  return <section aria-label="Inventario">
+    <nav className="actions accounts-nav" aria-label="Secciones de inventario">
+      <button className="navigation" aria-pressed={view === 'products'} onClick={() => setView('products')}>Productos</button>
+      <button className="navigation" aria-pressed={view === 'counts'} onClick={() => setView('counts')}>Conteo físico</button>
+    </nav>
+    {view === 'products' ? <CatalogProducts /> : <InventoryCounts isAdmin={isAdmin} />}
+  </section>;
+}
+
+function CatalogProducts() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');

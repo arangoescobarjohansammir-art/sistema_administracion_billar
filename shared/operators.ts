@@ -6,6 +6,8 @@ export const auditLabels = {
   account_payment: 'Abono de cliente',
   cash_movement: 'Movimiento de caja',
   inventory_movement: 'Ajuste de inventario',
+  inventory_count: 'Conteo físico',
+  inventory_count_adjustment: 'Ajuste por conteo físico',
 } as const;
 export type AuditKind = keyof typeof auditLabels;
 export type AuditEntry = {

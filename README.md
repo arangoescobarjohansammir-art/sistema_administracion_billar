@@ -43,6 +43,8 @@ Abre <http://127.0.0.1:4173>. La instalación inicial de dependencias requiere i
 
 Para probar el inventario, crea una cerveza con un empaque «Canasta» de 30 unidades. Registra una entrada de 2 canastas: las existencias deben subir a 60. Registra después una salida manual de 1 unidad con su motivo: deben quedar 59.
 
+En **Inventario → Conteo físico**, busca los productos que quieras revisar, escribe cuántas unidades de venta contaste y pulsa **Guardar y comparar**. Usa `0` cuando el producto esté agotado y deja en blanco los demás. El historial guarda lo esperado, lo contado y quién registró la revisión. Si el administrador confirma un faltante o sobrante, puede aplicar un ajuste con motivo. Este queda en los movimientos del producto y en **Personal → Registro**. Si hubo movimientos antes de guardar o de aplicar un ajuste, vuelve a contar los productos que cambiaron.
+
 Para una venta rápida, abre un turno en **Caja** y entra en **Venta**. Selecciona los productos para agregarlos con un clic. Si prefieres el teclado, usa **F2** para buscar, **↓** para entrar a los resultados, las flechas para recorrerlos y **Enter** para agregar. Usa **F4** para abrir el cobro, **Tab** para cambiar de campo y **Esc** para volver a la cuenta sin perder lo anotado.
 
 Puedes escribir la cantidad del producto directamente en la cuenta. Al cobrar en efectivo, puedes anotar cuánto entregó el cliente y ver el devuelto antes de confirmar. Solo el importe que corresponde a la venta entra al cuadre. En **Caja**, la **Calculadora de billetes y monedas** multiplica cada denominación por la cantidad contada y pasa el total a la base o al fondo que selecciones.
