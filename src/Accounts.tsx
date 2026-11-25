@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { accountTokenValue as tokenValue } from '../shared/tender';
+import { accountTokenValue as tokenValue, mixedCreditPlan } from '../shared/tender';
 
 export type Account = { id: number; name: string; balance: number };
 export type PaymentInput = { cash: number; transfer: number; tokens: number };
@@ -68,6 +68,21 @@ export function PaymentFields({ value, onChange, showTokens = true }: {
       {showTokens && <TokenQuantity count={value.tokens} rate={tokenValue} onChange={(tokens) => onChange({ ...value, tokens })} />}
     </div>
   );
+}
+
+export function MixedCreditField({ remaining, amount, onChange, hasAccount }: {
+  remaining: number; amount: string; onChange: (amount: string) => void; hasAccount: boolean;
+}) {
+  const { credit, difference } = mixedCreditPlan(remaining, amount);
+  return <div className="sale-tender">
+    <label>Fiado a la cuenta (COP)<input type="number" min={0} step={1} inputMode="numeric"
+      placeholder={String(Math.max(0, remaining))} value={amount} onChange={(event) => onChange(event.target.value)} /></label>
+    <div aria-live="polite">
+      {credit > 0 && <p>Queda fiado: <strong>{money.format(credit)}</strong>{!hasAccount && ' · Selecciona la cuenta del cliente.'}</p>}
+      {difference > 0 && <p>Falta cubrir <strong>{money.format(difference)}</strong> con el pago o el fiado.</p>}
+      {remaining >= 0 && difference < 0 && <p role="alert">El pago y el fiado superan el total.</p>}
+    </div>
+  </div>;
 }
 
 export function PaymentBreakdown({ payment }: { payment: Payment }) {

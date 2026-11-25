@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { accountTokenValue, cashChange } from '../shared/tender';
+import { accountTokenValue, cashChange, mixedCreditPlan } from '../shared/tender';
 import { CashChangeField } from './CashTools';
 import { AccountPicker } from './CustomerLookup';
 import { billiardTables, durationLabel, elapsedSeconds, timeCharge } from '../shared/billiard';
-import { api, emptyPayment, label, message, money, PaymentFields, TokenQuantity, totalPayment, useOperation,
+import { api, emptyPayment, label, message, MixedCreditField, money, PaymentFields, TokenQuantity, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
 
 type Line = { id: number; label: string; quantity: number; unitPrice: number };
@@ -14,7 +14,7 @@ type Session = {
 };
 type Closed = Session & { shares: { saleId: number; name: string | null; total: number }[] };
 type Dashboard = { rate: number; active: Session[]; recent: Closed[] };
-type Part = { key: number; account: string; amounts: number[]; payment: PaymentInput };
+type Part = { key: number; account: string; amounts: number[]; payment: PaymentInput; credit: string };
 
 const sessionDate = new Intl.DateTimeFormat('es-CO', {
   day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'America/Bogota',
@@ -39,7 +39,7 @@ function BillSplit({ session, accounts, locked, onClose }: {
     name: item.quantity + ' × ' + item.label, total: item.quantity * item.unitPrice,
   }))];
   const [parts, setParts] = useState<Part[]>(() => [{
-    key: 1, account: '', amounts: lines.map((line) => line.total), payment: emptyPayment,
+    key: 1, account: '', amounts: lines.map((line) => line.total), payment: emptyPayment, credit: '',
   }]);
   const totals = parts.map((part) => part.amounts.reduce((sum, amount) => sum + amount, 0));
   const remainders = lines.map((line, index) => line.total - parts.reduce((sum, part) => sum + (part.amounts[index] ?? 0), 0));
@@ -47,7 +47,9 @@ function BillSplit({ session, accounts, locked, onClose }: {
   const duplicateAccounts = new Set(named).size !== named.length;
   const ready = !duplicateAccounts && remainders.every((value) => value === 0) && parts.every((part, index) => {
     const paid = totalPayment(part.payment);
-    return paid <= totals[index] && (part.account || paid === totals[index]);
+    const remaining = totals[index] - paid;
+    return remaining >= 0 && (part.account || remaining === 0) &&
+      (totals[index] === 0 || mixedCreditPlan(remaining, part.credit).valid);
   });
 
   function divideEqually() {
@@ -81,7 +83,7 @@ function BillSplit({ session, accounts, locked, onClose }: {
           <div className="actions">
             <button className="secondary" type="button" disabled={parts.length >= 20} onClick={() => {
               const key = nextKey.current++;
-              setParts((previous) => [...previous, { key, account: '', amounts: lines.map(() => 0), payment: emptyPayment }]);
+              setParts((previous) => [...previous, { key, account: '', amounts: lines.map(() => 0), payment: emptyPayment, credit: '' }]);
             }}>Agregar persona</button>
             {parts.length > 1 && <button className="secondary" type="button" onClick={divideEqually}>Dividir todo por igual</button>}
           </div>
@@ -101,17 +103,15 @@ function BillSplit({ session, accounts, locked, onClose }: {
                 ))}
               </div>
               <PaymentFields value={part.payment} onChange={(payment) => updatePart(part.key, { payment })} />
+              {totals[index] > 0 && <MixedCreditField remaining={totals[index] - totalPayment(part.payment)} amount={part.credit}
+                onChange={(credit) => updatePart(part.key, { credit })} hasAccount={Boolean(part.account)} />}
               <div className="actions">
                 {totals[index] > 0 && <button type="button" className="secondary"
-                  onClick={() => updatePart(part.key, { payment: { ...emptyPayment, cash: totals[index] } })}>Pagar esta parte en efectivo</button>}
+                  onClick={() => updatePart(part.key, { payment: { ...emptyPayment, cash: totals[index] }, credit: '' })}>Pagar esta parte en efectivo</button>}
                 {parts.length > 1 && <button type="button" className="secondary"
                   onClick={() => setParts((previous) => previous.filter((entry) => entry.key !== part.key))}>Quitar persona {index + 1}</button>}
               </div>
-              {totals[index] - totalPayment(part.payment) !== 0 && <p>
-                {totals[index] < totalPayment(part.payment) ? 'El pago supera su parte.' : part.account
-                  ? 'Queda fiado: ' + money.format(totals[index] - totalPayment(part.payment))
-                  : 'Completa su pago o selecciona una cuenta por nombre.'}
-              </p>}
+              {totals[index] < totalPayment(part.payment) && <p role="alert">El pago supera su parte.</p>}
             </fieldset>
           ))}
           {duplicateAccounts && <p role="alert">Agrupa los importes de cada cuenta por nombre en una sola parte.</p>}
@@ -163,6 +163,7 @@ function TablePayment({ session, accounts, locked, onClose }: {
   const [split, setSplit] = useState(false);
   const [method, setMethod] = useState<'cash' | 'transfer' | 'tokens' | 'mixed' | 'credit'>('cash');
   const [owner, setOwner] = useState('');
+  const [mixedCredit, setMixedCredit] = useState('');
   const [payment, setPayment] = useState(emptyPayment);
   const [received, setReceived] = useState('');
   const charge = method === 'cash' ? { ...emptyPayment, cash: session.total }
@@ -171,6 +172,7 @@ function TablePayment({ session, accounts, locked, onClose }: {
   const balance = session.total - totalPayment(charge);
   const change = cashChange(charge.cash, received);
   const ready = session.total === 0 || (balance >= 0 && (balance === 0 || owner !== '') &&
+    (method !== 'mixed' || mixedCreditPlan(balance, mixedCredit).valid) &&
     (method !== 'tokens' || (Number.isInteger(payment.tokens) && payment.tokens > 0)) &&
     (charge.cash === 0 || change === null || (Number.isInteger(change) && change >= 0)));
   if (split) return <><BillSplit session={session} accounts={accounts} locked={locked} onClose={onClose} />
@@ -199,18 +201,21 @@ function TablePayment({ session, accounts, locked, onClose }: {
             <strong>Queda por pagar {money.format(balance)}</strong>
             <button className="secondary" type="button" onClick={() => {
               setPayment({ ...emptyPayment, tokens: payment.tokens, cash: balance });
+              setMixedCredit('');
               setMethod('mixed');
             }}>Completar en efectivo</button>
           </div>}
         </div>}
+        {method === 'mixed' && <PaymentFields value={payment} onChange={setPayment} />}
+        {method === 'mixed' && <MixedCreditField remaining={balance} amount={mixedCredit} onChange={setMixedCredit}
+          hasAccount={Boolean(owner)} />}
         <div className="space-above">
           <AccountPicker accounts={accounts} label={'Cuenta del cliente' + (balance === 0 ? ' (opcional)' : '')}
             value={owner} required={balance > 0} onChange={setOwner} />
         </div>
-        {method === 'mixed' && <PaymentFields value={payment} onChange={setPayment} />}
         {charge.cash > 0 && <CashChangeField due={charge.cash} received={received} onChange={setReceived} />}
         {balance < 0 && <p role="alert">El pago supera el total de la mesa.</p>}
-        {balance > 0 && owner && <p>Saldo que queda fiado: <strong>{money.format(balance)}</strong></p>}
+        {method !== 'mixed' && balance > 0 && owner && <p>Saldo que queda fiado: <strong>{money.format(balance)}</strong></p>}
       </>}
       <div className="actions">
         <button disabled={!ready}>{session.total === 0 ? 'Cerrar sin cargo' : 'Guardar cobro y liberar mesa'}</button>

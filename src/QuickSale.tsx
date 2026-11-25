@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { accountTokenValue, cashChange } from '../shared/tender';
+import { accountTokenValue, cashChange, mixedCreditPlan } from '../shared/tender';
 import { tejoProductValue } from '../shared/tejo';
 import { CashChangeField } from './CashTools';
 import { AccountPicker } from './CustomerLookup';
-import { api, emptyPayment, label, message, money, PaymentBreakdown, PaymentFields, TokenQuantity, totalPayment, useOperation,
+import { api, emptyPayment, label, message, MixedCreditField, money, PaymentBreakdown, PaymentFields, TokenQuantity, totalPayment, useOperation,
   type Account, type Payment, type PaymentInput, type Product } from './Accounts';
 
 type Item = { product: Product; quantity: number };
@@ -30,6 +30,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const [items, setItems] = useState<Item[]>([]);
   const [mode, setMode] = useState<Mode>('order');
   const [accountId, setAccountId] = useState('');
+  const [mixedCredit, setMixedCredit] = useState('');
   const [payment, setPayment] = useState<PaymentInput>(emptyPayment);
   const [tokenUse, setTokenUse] = useState<TokenUse>('products');
   const [received, setReceived] = useState('');
@@ -73,11 +74,13 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const cashDue = methods.cash;
   const change = cashChange(cashDue, received);
   const remaining = due - totalPayment(methods);
+  const accountRequired = mode === 'credit' || remaining > 0;
   const locked = busy || Boolean(loadError);
   const canCheckout = cashOpen === true && items.length > 0 && !locked &&
     items.every(({ quantity, product }) => Number.isInteger(quantity) && quantity >= 1 && quantity <= product.stock);
   const canConfirm = canCheckout && mode !== 'order' && remaining >= 0 &&
-    (remaining === 0 || Boolean(accountId)) && (mode !== 'credit' || Boolean(accountId)) &&
+    (mode !== 'mixed' || mixedCreditPlan(remaining, mixedCredit).valid) &&
+    (!accountRequired || Boolean(accountId)) &&
     (mode !== 'tokens' || tokens > 0) && Number.isInteger(tokens) && tokens >= 0 &&
     (!productRedemption || tokens <= 1000) &&
     (cashDue <= 0 || change === null || (Number.isInteger(change) && change >= 0));
@@ -144,6 +147,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setTokenUse('products');
     setReceived('');
     setAccountId('');
+    setMixedCredit('');
     setMode('order');
   }
 
@@ -159,6 +163,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
 
   function completeWith(method: 'cash' | 'transfer') {
     setTokenUse('products');
+    setMixedCredit('');
     setPayment({ ...emptyPayment, tokens, [method]: due });
     chooseMethod('mixed');
   }
@@ -277,13 +282,15 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
                   <button className="secondary" type="button" onClick={() => chooseMethod('mixed')}>Dividir el resto</button>
                 </div>}
               </div>}
-              <AccountPicker accounts={accounts} value={accountId} required={mode === 'credit'} onChange={setAccountId}
-                label={'Cuenta del cliente' + (mode === 'mixed' ? ' (opcional si pagas todo)' : mode !== 'credit' ? ' (opcional)' : '')} />
               {mode === 'mixed' && <PaymentFields value={payment} onChange={setPayment} showTokens={false} />}
+              {mode === 'mixed' && <MixedCreditField remaining={remaining} amount={mixedCredit} onChange={setMixedCredit}
+                hasAccount={Boolean(accountId)} />}
+              <AccountPicker accounts={accounts} value={accountId} required={accountRequired} onChange={setAccountId}
+                label={'Cuenta del cliente' + (accountRequired ? '' : ' (opcional)')} />
               {cashDue > 0 && <CashChangeField due={cashDue} received={received} onChange={setReceived} />}
               {mode === 'credit' && !accounts.length && <p>Crea una cuenta en el módulo Cuentas.</p>}
               {remaining < 0 && <p role="alert">El pago supera el total.</p>}
-              {remaining > 0 && showsTokens && <p>{accountId ? 'Queda fiado: ' : 'Falta asignar: '}<strong>{money.format(remaining)}</strong></p>}
+              {remaining > 0 && mode === 'tokens' && <p>{accountId ? 'Queda fiado: ' : 'Falta asignar: '}<strong>{money.format(remaining)}</strong></p>}
               <div className="order-actions">
                 <button type="submit" data-confirm-sale disabled={!canConfirm}>
                   {busy ? 'Guardando…' : mode === 'credit' ? 'Guardar fiado' : 'Confirmar pago'}

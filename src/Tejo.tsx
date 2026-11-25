@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { cashChange } from '../shared/tender';
+import { cashChange, mixedCreditPlan } from '../shared/tender';
 import { CashChangeField } from './CashTools';
 import { AccountPicker, CustomerLookup } from './CustomerLookup';
 import { courtLabel, tejoCourtsPerType, tejoProductValue, tejoTypes, type TejoType } from '../shared/tejo';
-import { api, emptyPayment, label, message, money, PaymentFields, totalPayment, useOperation,
+import { api, emptyPayment, label, message, MixedCreditField, money, PaymentFields, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
 
 type Player = Pick<Account, 'id' | 'name'> & { accountId?: number | null };
@@ -150,6 +150,7 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
   const [expanded, setExpanded] = useState(false);
   const [basket, setBasket] = useState<Basket>([]);
   const [method, setMethod] = useState<RedemptionMethod>('');
+  const [mixedCredit, setMixedCredit] = useState('');
   const [payment, setPayment] = useState(emptyPayment);
   const [received, setReceived] = useState('');
   const results = useRef<HTMLDivElement>(null);
@@ -160,12 +161,15 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
   const methods = extra === 0 ? emptyPayment : method === 'cash' ? { ...emptyPayment, cash: extra }
     : method === 'transfer' ? { ...emptyPayment, transfer: extra } : method === 'mixed' ? payment : emptyPayment;
   const remaining = extra - totalPayment(methods);
+  const plan = mixedCreditPlan(remaining, mixedCredit);
+  const credit = method === 'mixed' ? plan.credit : remaining;
   const knownPlayer = !entry.flexible || Boolean(entry.player.customerId);
   const change = cashChange(methods.cash, received);
-  const needsAccount = remaining > 0 && (method === 'credit' || method === 'mixed');
+  const needsAccount = credit > 0 && (method === 'credit' || method === 'mixed');
   const quantitiesValid = basket.every(({ product, quantity }) => Number.isInteger(quantity) && quantity > 0 && quantity <= product.stock);
   const ready = !locked && basket.length > 0 && quantitiesValid &&
     (extra === 0 || (Boolean(method) && remaining >= 0 && (remaining === 0 || Boolean(payee) || knownPlayer) &&
+      (method !== 'mixed' || plan.valid) &&
       (methods.cash <= 0 || change === null || (Number.isInteger(change) && change >= 0))));
   const matches = products.filter((product) => searchText(label(product)).includes(searchText(query.trim())));
   const visible = expanded ? matches : matches.slice(0, 12);
@@ -243,10 +247,13 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
             <div className="actions">{redemptionMethods.map(([id, name]) => <button key={id} type="button" className="secondary"
               aria-pressed={method === id} onClick={() => { setMethod(id); setReceived(''); }}>{name}</button>)}</div>
             {method === 'mixed' && <PaymentFields value={payment} onChange={setPayment} />}
+            {method === 'mixed' && <MixedCreditField remaining={remaining} amount={mixedCredit} onChange={setMixedCredit}
+              hasAccount={knownPlayer || Boolean(payee)} />}
             {methods.cash > 0 && <CashChangeField due={methods.cash} received={received} onChange={setReceived} />}
             {remaining < 0 && <p role="alert">El pago supera lo que falta por cobrar.</p>}
-            {needsAccount && (knownPlayer ? <p>Queda fiado a {entry.player.name}: <strong>{money.format(remaining)}</strong></p>
-              : <AccountPicker accounts={accounts} label={'Cuenta para anotar ' + money.format(remaining)} required
+            {needsAccount && (knownPlayer ? <p>{method === 'mixed' ? <>Cuenta del fiado: <strong>{entry.player.name}</strong></>
+              : <>Queda fiado a {entry.player.name}: <strong>{money.format(credit)}</strong></>}</p>
+              : <AccountPicker accounts={accounts} label={'Cuenta para anotar ' + money.format(credit)} required
                 value={payee} onChange={setPayee} />)}
           </div>}
           <div className="actions">
