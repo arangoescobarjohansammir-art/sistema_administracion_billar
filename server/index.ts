@@ -8,6 +8,7 @@ import { createAccounts } from './accounts.js';
 import { createBilliards } from './billiards.js';
 import { createTejo } from './tejo.js';
 import { createCash } from './cash.js';
+import { startAdminSync } from './admin.js';
 import { readJson, sendJson } from './http.js';
 
 const host = '127.0.0.1';
@@ -30,7 +31,7 @@ const handleCatalog = createCatalog(database);
 const accounts = createAccounts(database);
 const handleBilliards = createBilliards(database, accounts);
 const handleTejo = createTejo(database, accounts);
-const handleCash = createCash(database, accounts);
+const cash = createCash(database, accounts);
 
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -38,13 +39,19 @@ const contentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
 };
 // Keep serving the frontend that was built with this process, even if a new build runs.
-const assets = new Map([['/', readFileSync(new URL('index.html', client))]]);
-for (const entry of readdirSync(new URL('assets/', client), { withFileTypes: true })) {
-  if (entry.isFile()) {
-    const name = 'assets/' + entry.name;
-    assets.set('/' + name, readFileSync(new URL(name, client)));
+const assets = new Map<string, Buffer>();
+function loadFrontend(root: URL, prefix: string) {
+  const page = readFileSync(new URL('index.html', root));
+  assets.set(prefix, page);
+  for (const entry of readdirSync(new URL('assets/', root), { withFileTypes: true })) {
+    if (entry.isFile()) {
+      const name = 'assets/' + entry.name;
+      assets.set(prefix + name, readFileSync(new URL(name, root)));
+    }
   }
 }
+loadFrontend(client, '/');
+loadFrontend(new URL('../admin/', import.meta.url), '/admin/');
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse) {
   const addressPort = request.socket.localPort;
@@ -72,7 +79,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     return handleTejo(request, response, path);
   }
   if (path === '/api/cash' || path.startsWith('/api/cash/')) {
-    return handleCash(request, response, path);
+    return cash.handle(request, response, path);
   }
   if (path === '/api/local-note') {
     if (request.method === 'GET') {
@@ -99,11 +106,15 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (path.startsWith('/api/')) {
     return sendJson(response, 404, { code: 'API_ROUTE_NOT_FOUND', error: 'La ruta de la aplicación no existe.' });
   }
+  if (request.method === 'GET' && path === '/admin') {
+    response.writeHead(308, { Location: '/admin/' + new URL(request.url ?? '/', `http://${host}`).search });
+    return response.end();
+  }
   const body = request.method === 'GET' ? assets.get(path) : undefined;
   if (!body) return sendJson(response, 404, { error: 'Página no encontrada.' });
   response.writeHead(200, {
-    'Content-Type': contentTypes[path === '/' ? '.html' : extname(path)] ?? 'application/octet-stream',
-    'Cache-Control': path === '/' ? 'no-store' : 'public, max-age=31536000, immutable',
+    'Content-Type': contentTypes[path.endsWith('/') ? '.html' : extname(path)] ?? 'application/octet-stream',
+    'Cache-Control': path.endsWith('/') ? 'no-store' : 'public, max-age=31536000, immutable',
     'X-Content-Type-Options': 'nosniff',
   });
   response.end(body);
@@ -119,4 +130,5 @@ const server = createServer((request, response) => {
 server.listen(port, host, () => {
   const address = server.address();
   if (address && typeof address === 'object') console.log(`Caja local en http://${host}:${address.port}`);
+  startAdminSync(database, cash, accounts);
 });

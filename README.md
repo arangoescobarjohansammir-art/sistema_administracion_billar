@@ -1,6 +1,6 @@
 # Caja para tejo y billar
 
-Proyecto de portafolio para administrar un establecimiento con seis mesas de billar, seis canchas de maxitejo, seis de tejo largo y venta de productos. Un cajero registra las operaciones en el computador del negocio. El administrador tendrá un panel de consulta desde el celular.
+Proyecto de portafolio para administrar un establecimiento con seis mesas de billar, seis canchas de maxitejo, seis de tejo largo y venta de productos. Un cajero registra las operaciones en el computador del negocio. El administrador puede consultar la caja desde un panel para celular conectado a Supabase.
 
 ## Estado
 
@@ -41,18 +41,24 @@ Para probar el fiado, crea una cuenta en **Cuentas**, luego abre **Venta** y agr
 
 Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, las cuentas de billar y tejo, el cierre de caja y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
 
-La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo. Supabase se incorporará con el panel remoto.
+La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo.
 
-## Arquitectura propuesta
+## Panel móvil del administrador
+
+Con el servidor local iniciado, abre [la demostración](http://127.0.0.1:4173/admin/?demo=1). Puedes cambiar de día, abrir un cierre, consultar las mesas y canchas ocupadas y buscar productos. Los datos de esta demostración son ficticios y funcionan sin configurar Supabase.
+
+El panel real es privado y de solo lectura. Consulta los últimos 30 días de ventas y cobros, los últimos 30 cierres, los saldos pendientes, el inventario activo y la ocupación. Muestra la hora de la última sincronización y avisa si los datos llevan más de tres minutos sin actualizarse. Sigue los [pasos de instalación del panel remoto](docs/panel-admin.md) para conectarlo al proyecto Supabase del club y publicar su enlace HTTPS.
+
+## Arquitectura
 
 | Componente | Tecnología | Responsabilidad |
 | --- | --- | --- |
 | Interfaz de caja | React, Vite y TypeScript | Abrir cuentas, registrar pedidos y operar el cierre desde el navegador del computador. |
 | Aplicación local | Node.js y TypeScript | Servir la interfaz, validar operaciones y guardar los movimientos. |
 | Datos locales | SQLite | Mantener cuentas abiertas, inventario, cobros y cierres aunque no haya internet. |
-| Panel del administrador | React y Supabase | Consultar desde el celular los datos ya sincronizados. Supabase alojará la copia para consulta y gestionará el acceso del administrador. |
+| Panel del administrador | React y Supabase | Consultar desde el celular los datos sincronizados. Supabase aloja la copia y gestiona el acceso del administrador. |
 
-La caja será el origen de los datos. El envío a Supabase se hará en segundo plano y podrá reintentarse sin duplicar movimientos. El panel deberá mostrar la hora de la última sincronización para indicar hasta cuándo están actualizadas las cifras. Las fotos necesarias en caja se almacenarán localmente.
+La caja es el origen de los datos. Cuando se configura Supabase, el servidor reemplaza la copia de consulta en segundo plano aproximadamente cada minuto. Si hay un fallo de conexión, vuelve a intentarlo con los datos actuales sin duplicar ventas. Las fotos se guardan en la caja local.
 
 ## Documentación
 

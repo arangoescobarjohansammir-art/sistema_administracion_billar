@@ -7,11 +7,13 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build": "tsc --noEmit && vite build --outDir dist/client && tsc -p tsconfig.server.json",
+    "build": "tsc --noEmit && vite build --outDir dist/client && npm run build:admin && tsc -p tsconfig.server.json",
+    "build:admin": "vite build --config admin/vite.config.mjs",
     "start": "node scripts/start.mjs",
     "test": "npm run build && node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
     "pdfkit": "^0.21.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

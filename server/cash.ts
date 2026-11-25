@@ -132,6 +132,13 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
     ).run(cashier, new Date().toISOString(), openingBase, previousBase, note, openingTokens, previousTokens).lastInsertRowid);
   }
 
+  function readPendingBalance() {
+    return Number(database.prepare([
+      'SELECT (SELECT COALESCE(SUM(total), 0) FROM sales WHERE account_id IS NOT NULL) -',
+      '(SELECT COALESCE(SUM(cash + transfer + tokens * token_value), 0) FROM account_payments WHERE account_id IS NOT NULL) AS total',
+    ].join(' ')).get()?.total);
+  }
+
   function summarize(shift: ReturnType<typeof shiftById>) {
     const id = Number(shift.id);
     const sale = database.prepare([
@@ -151,10 +158,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
     const salesExpected = shift.salesExpected ?? (Number(shift.openingBase) + Number(payment?.cash) + Number(movement?.sales));
     const purchasesExpected = shift.purchasesExpected ?? Number(movement?.purchases);
     const transferExpected = shift.transferExpected ?? Number(payment?.transfer);
-    const pending = shift.pendingBalance ?? database.prepare([
-      'SELECT (SELECT COALESCE(SUM(total), 0) FROM sales WHERE account_id IS NOT NULL) -',
-      '(SELECT COALESCE(SUM(cash + transfer + tokens * token_value), 0) FROM account_payments WHERE account_id IS NOT NULL) AS total',
-    ].join(' ')).get()?.total;
+    const pending = shift.pendingBalance ?? readPendingBalance();
     const issued = database.prepare([
       'SELECT (SELECT COUNT(*) FROM cash_shift_tokens WHERE shift_id = ?) +',
       '(SELECT COUNT(*) FROM cash_shift_slot_tokens WHERE shift_id = ?) AS value',
@@ -266,7 +270,19 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
     return { shift, totals: summarize(shift), movements, payments };
   }
 
-  return async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
+  function adminOverview() {
+    function details(id: number) {
+      const shift = shiftById(id);
+      return { shift, totals: summarize(shift) };
+    }
+    const id = activeShiftId(database);
+    const closures = database.prepare('SELECT id FROM cash_shifts WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 30').all();
+    const active = id === null ? null : details(id);
+    return { active, pendingBalance: active?.totals.pendingBalance ?? readPendingBalance(),
+      closures: closures.map((row) => details(Number(row.id))) };
+  }
+
+  async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     try {
       const report = request.method === 'GET' ? /^\/api\/cash\/([1-9]\d*)\/report\.pdf$/.exec(path) : null;
       if (report) {
@@ -325,5 +341,6 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
       if (!(error instanceof ValidationError)) throw error;
       return sendJson(response, error.status, { error: error.message });
     }
-  };
+  }
+  return { handle, adminOverview };
 }

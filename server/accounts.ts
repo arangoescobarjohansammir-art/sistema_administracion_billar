@@ -78,9 +78,11 @@ export function createAccounts(database: DatabaseSync) {
     '  request_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result_id INTEGER NOT NULL',
     ') STRICT;',
     'CREATE INDEX IF NOT EXISTS sales_by_account ON sales(account_id, id);',
+    'CREATE INDEX IF NOT EXISTS sales_by_date ON sales(created_at);',
     'CREATE INDEX IF NOT EXISTS items_by_sale ON sale_items(sale_id, id);',
     'CREATE INDEX IF NOT EXISTS allocated_lines_by_sale ON sale_allocated_lines(sale_id, id);',
     'CREATE INDEX IF NOT EXISTS payments_by_account ON account_payments(account_id, id);',
+    'CREATE INDEX IF NOT EXISTS payments_by_date ON account_payments(created_at);',
   ].join('\n'));
 
   const accountsSelect = [
@@ -89,6 +91,11 @@ export function createAccounts(database: DatabaseSync) {
     'COALESCE((SELECT SUM(cash + transfer + tokens * token_value) FROM account_payments WHERE account_id = a.id), 0) AS balance',
     'FROM customer_accounts a',
   ].join(' ');
+
+  function openBalances() {
+    return database.prepare('SELECT id, name, balance FROM (' + accountsSelect + ') WHERE balance > 0 ORDER BY balance DESC, id')
+      .all().map((row) => ({ id: Number(row.id), name: String(row.name), balance: Number(row.balance) }));
+  }
 
   function accountById(id: number) {
     const account = database.prepare(accountsSelect + ' WHERE a.id = ?').get(id);
@@ -254,5 +261,5 @@ export function createAccounts(database: DatabaseSync) {
       return sendJson(response, error.status, { error: error.message });
     }
   }
-  return { handle, accountById, accountForName, writeOnce, insertSale, insertPayment, insertAllocatedLine, requireShift };
+  return { handle, accountById, accountForName, writeOnce, insertSale, insertPayment, insertAllocatedLine, requireShift, openBalances };
 }

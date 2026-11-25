@@ -1,8 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const host = '127.0.0.1';
+const envFile = fileURLToPath(new URL('../.env', import.meta.url));
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 const port = Number(process.env.PORT ?? 4173);
 
 try {
