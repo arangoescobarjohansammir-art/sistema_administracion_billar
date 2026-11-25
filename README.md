@@ -18,7 +18,7 @@ En **Venta → Cobrar**, cada ficha cubre hasta $4.000 en productos tanto en **F
 
 El encabezado de la app mantiene visible la fecha y la hora de Colombia.
 
-Al **registrar consumo** en Billar o Tejo, elige un producto desde su tarjeta con foto, nombre y precio, o escribe parte de su nombre en **Buscar producto**. Las opciones se filtran desde la primera letra y puedes elegir con el mouse o con **↓** y **Enter**. En Billar, elige la cantidad y confirma la entrega. En Tejo, el producto se agrega a la lista del chico para revisar antes de confirmar.
+Al **registrar consumo** en Billar o Tejo, puedes abrir la lista de productos, elegir una tarjeta con foto, nombre y precio, o escribir parte del nombre en **Buscar producto**. Las sugerencias se filtran desde la primera letra y puedes elegir con el mouse o con **↓** y **Enter**. En Billar, elige la cantidad y confirma la entrega. En Tejo, el producto se agrega a la lista del chico para revisar antes de confirmar.
 
 ## Usuarios y correcciones
 
@@ -69,7 +69,7 @@ En **Venta → Cobrar → Mixto → Repartir fiado entre personas**, elige los c
 
 En **Cuentas**, el **Historial actual** reúne los cargos, pagos y anulaciones con fecha y hora de Colombia. Si queda saldo, los movimientos siguen en ese historial aunque cambie el día o el turno. Cuando la cuenta queda en cero, se puede consultar en **Historial anterior**. El siguiente cargo inicia un ciclo nuevo para el mismo cliente.
 
-En **Venta**, **Billar** y **Tejo**, escribe parte del nombre o apodo en el campo de cliente. Las sugerencias aparecen desde la primera letra, incluso si no escribes las tildes. Puedes elegir con el mouse o con **↓** y **Enter**.
+En **Venta**, **Billar** y **Tejo**, abre el desplegable para elegir un cliente de la lista completa o escribe parte de su nombre o apodo. Las sugerencias aparecen desde la primera letra, incluso si no escribes las tildes. Puedes elegir con el mouse o con **↓** y **Enter**.
 
 Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, las cuentas de billar y tejo, el cierre de caja y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
 

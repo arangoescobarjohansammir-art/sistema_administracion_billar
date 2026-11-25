@@ -9,6 +9,7 @@ export function CustomerLookup({ accounts, label, text, onTextChange, onChoose, 
   return <SearchLookup options={accounts} label={label} text={text} onTextChange={onTextChange} onChoose={onChoose}
     selectedId={selectedId} required={required} maxLength={100} allowFreeText={!mustChoose}
     placeholder="Escribe un nombre o apodo" emptyMessage="No hay clientes que coincidan."
+    listLabel={'Lista de clientes · ' + label} listPlaceholder="Elegir cliente de la lista"
     clearLabel={mustChoose ? 'Borrar cliente' : undefined}
     validationMessage={mustChoose ? 'Elige una cuenta de las sugerencias o borra el nombre.' : undefined} />;
 }

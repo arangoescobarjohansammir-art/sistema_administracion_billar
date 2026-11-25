@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 type LookupOption = { id: number; name: string; detail?: string };
 type LookupProps<Option> = {
@@ -8,6 +8,8 @@ type LookupProps<Option> = {
   onTextChange: (text: string) => void;
   onChoose: (option: Option) => void;
   placeholder: string;
+  listLabel: string;
+  listPlaceholder: string;
   emptyMessage?: string;
   clearLabel?: string;
   validationMessage?: string;
@@ -23,7 +25,7 @@ export const normalizeSearch = (value: string) => value.normalize('NFD').replace
   .trim().replace(/\s+/g, ' ');
 
 export function SearchLookup<Option extends LookupOption>({
-  options, label, text, onTextChange, onChoose, placeholder, emptyMessage, clearLabel, validationMessage,
+  options, label, text, onTextChange, onChoose, placeholder, listLabel, listPlaceholder, emptyMessage, clearLabel, validationMessage,
   allowFreeText, autoFocus, keySearch, required, selectedId, maxLength,
 }: LookupProps<Option>) {
   const id = useId();
@@ -31,10 +33,12 @@ export function SearchLookup<Option extends LookupOption>({
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState<number | null>(null);
   const query = selectedId === undefined ? normalizeSearch(text) : '';
-  const matches = open ? options.map((option) => ({ option, name: normalizeSearch(option.name) }))
+  const ordered = useMemo(() => [...options].sort((a, b) => a.name.localeCompare(b.name, 'es') || a.id - b.id)
+    .map((option) => ({ option, name: normalizeSearch(option.name) })), [options]);
+  const listSelection = selectedId ?? (allowFreeText ? ordered.find(({ name }) => query === name)?.option.id : undefined);
+  const matches = open ? ordered
     .filter(({ name }) => name.includes(query))
-    .sort((a, b) => Number(b.name.startsWith(query)) - Number(a.name.startsWith(query)) ||
-      a.option.name.localeCompare(b.option.name, 'es') || a.option.id - b.option.id)
+    .sort((a, b) => Number(b.name.startsWith(query)) - Number(a.name.startsWith(query)))
     .map(({ option }) => option) : [];
   const activeIndex = matches.findIndex((option) => option.id === highlighted);
   const optionId = (option: LookupOption) => id + '-option-' + option.id;
@@ -80,6 +84,18 @@ export function SearchLookup<Option extends LookupOption>({
 
   return <div className="search-lookup">
     <label htmlFor={id}>{label}</label>
+    <select className="search-lookup-select" aria-label={listLabel} value={listSelection ?? ''} disabled={!options.length}
+      onChange={(event) => {
+        const value = event.currentTarget.value;
+        const choice = options.find((option) => String(option.id) === value);
+        if (choice) choose(choice);
+        else if (!value) { onTextChange(''); close(); }
+      }}>
+      <option value="">{listPlaceholder}</option>
+      {ordered.map(({ option }) => <option key={option.id} value={option.id}>
+        {option.name}{option.detail ? ' · ' + option.detail : ''}
+      </option>)}
+    </select>
     <div className="search-lookup-field">
       <input ref={input} id={id} role="combobox" aria-autocomplete="list" aria-expanded={open && matches.length > 0}
         aria-controls={open && matches.length > 0 ? id + '-list' : undefined}

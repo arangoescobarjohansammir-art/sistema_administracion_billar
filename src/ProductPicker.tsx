@@ -25,6 +25,7 @@ export function ProductLookup({ products, selected, query, onQueryChange, onChoo
   return <SearchLookup options={options} label="Buscar producto" text={selected ? label(selected) : query} selectedId={selected?.id}
     onTextChange={onQueryChange} onChoose={({ product }) => onChoose(product)} required={required} autoFocus={autoFocus} keySearch
     placeholder="Escribe el nombre, marca o presentación"
+    listLabel="Lista de productos" listPlaceholder="Elegir producto de la lista"
     clearLabel="Borrar búsqueda de producto"
     validationMessage={required ? 'Elige un producto de las sugerencias o de las tarjetas.' : undefined} />;
 }
