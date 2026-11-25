@@ -4,6 +4,7 @@ import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
 import { activeShiftId } from './cash-ledger.js';
 import type { Audit } from './audit.js';
+import { createAccountHistory } from './account-history.js';
 
 import { accountTokenValue as tokenValue } from '../shared/tender.js';
 const maxMoney = 1_000_000_000;
@@ -92,6 +93,7 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     'CREATE INDEX IF NOT EXISTS payments_by_account ON account_payments(account_id, id);',
     'CREATE INDEX IF NOT EXISTS payments_by_date ON account_payments(created_at);',
   ].join('\n'));
+  const historyFor = createAccountHistory(database);
 
   const accountsSelect = [
     'SELECT a.id, a.name, a.created_at AS createdAt,',
@@ -266,6 +268,7 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
           account: accountById(id),
           sales: getSales(id),
           payments: database.prepare(paymentsSelect + ' WHERE account_id = ? ORDER BY id DESC').all(id),
+          history: historyFor(id),
         });
       }
       return sendJson(response, 405, { error: 'Método no permitido.' });

@@ -1,9 +1,81 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { testServer } from './support/local-server.mjs';
 
 const none = { cash: 0, transfer: 0, tokens: 0 };
+
+test('conserva el historial con abonos parciales, archiva al saldar y recupera movimientos antiguos', { timeout: 20000 }, async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  await server.openShift();
+  const post = (path, status, data) => server.json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
+  const product = await post('/api/products', 201, {
+    name: 'Producto de prueba', brand: '', presentation: 'Unidad', price: 4000,
+    packageName: '', unitsPerPackage: 1, active: true,
+  });
+  await post('/api/products/' + product.id + '/movements', 201, { direction: 'in', unit: 'unit', quantity: 12, reason: 'Prueba' });
+  const customer = await post('/api/accounts', 201, { name: 'Cliente de prueba' });
+  const path = '/api/accounts/' + customer.id;
+  const detail = () => server.json(path, 200);
+  const sale = (quantity, cash = 0) => post('/api/sales', 201, {
+    accountId: customer.id, items: [{ productId: product.id, quantity, unitPrice: 4000 }], payment: { ...none, cash },
+  });
+  const pay = (cash) => post(path + '/payments', 201, { payment: { ...none, cash } });
+  const opening = await sale(4, 6000);
+  const openingHistory = (await detail()).history.current;
+  assert.deepEqual(openingHistory.movements.map(({ kind, balanceAfter }) => [kind, balanceAfter]), [['sale', 16000], ['payment', 10000]]);
+  const partial = await pay(2000);
+  assert.equal((await detail()).history.current.id, openingHistory.id);
+  assert.equal((await detail()).history.current.movements.at(-1).balanceAfter, 8000);
+  const final = await pay(8000);
+  const settled = (await detail()).history;
+  assert.equal(settled.current, null);
+  assert.equal(settled.closed[0].id, openingHistory.id);
+  assert.equal(settled.closed[0].movements.at(-1).sourceId, final.id);
+  const second = await sale(1);
+  assert.deepEqual((await detail()).history.current.movements.map(({ sourceId }) => sourceId), [second.id]);
+
+  await server.stop();
+  const legacy = new DatabaseSync(server.databasePath);
+  const started = '2025-01-05T21:30:00.000Z';
+  const closedAt = '2025-01-06T03:08:43.000Z';
+  try {
+    legacy.exec(`
+      DROP TRIGGER account_history_sale;
+      DROP TRIGGER account_history_payment;
+      DROP TRIGGER account_history_void;
+      DROP TABLE account_history_events;
+    `);
+    legacy.prepare('UPDATE sales SET created_at = ? WHERE id = ?').run(started, opening.id);
+    legacy.prepare('UPDATE account_payments SET created_at = ? WHERE sale_id = ?').run(started, opening.id);
+    legacy.prepare('UPDATE account_payments SET created_at = ? WHERE id = ?').run('2025-01-05T22:35:00.000Z', partial.id);
+    legacy.prepare('UPDATE account_payments SET created_at = ? WHERE id = ?').run(closedAt, final.id);
+    legacy.prepare('UPDATE sales SET created_at = ? WHERE id = ?').run('2025-01-06T03:08:44.000Z', second.id);
+  } finally {
+    legacy.close();
+  }
+  await server.start();
+  const restored = await detail();
+  assert.equal(restored.account.balance, 4000);
+  assert.deepEqual(restored.history.closed.map(({ openedAt, closedAt: at }) => [openedAt, at]), [[started, closedAt]]);
+  assert.deepEqual(restored.history.closed[0].movements.map(({ balanceAfter }) => balanceAfter), [16000, 10000, 8000, 0]);
+  assert.deepEqual(restored.history.current.movements.map(({ kind, sourceId }) => [kind, sourceId]), [['sale', second.id]]);
+
+  await pay(4000);
+  const paidInFull = await sale(1, 4000);
+  const another = await sale(1);
+  await post('/api/corrections/sales/' + paidInFull.id + '/void', 201, {
+    confirmed: true, stockReturned: true, reason: 'Anulación de prueba',
+  });
+  const current = await detail();
+  assert.equal(current.account.balance, 4000);
+  assert.deepEqual(current.history.current.movements.map(({ sourceId }) => sourceId), [another.id]);
+  assert.deepEqual(current.history.closed[0].movements.map(({ kind, amount, balanceAfter }) => [kind, amount, balanceAfter]),
+    [['sale', 4000, 4000], ['payment', 4000, 0], ['void', 0, 0]]);
+});
 
 test('cobra y fía ventas sin duplicar inventario o abonos', { timeout: 20000 }, async (t) => {
   const { start, stop, json, cleanup, openShift } = await testServer();

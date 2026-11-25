@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { accountTokenValue as tokenValue, mixedCreditPlan } from '../shared/tender';
+import type { AccountCycle, AccountHistory } from '../shared/account-history';
 
 export type Account = { id: number; name: string; balance: number };
 export type PaymentInput = { cash: number; transfer: number; tokens: number };
 export type Payment = PaymentInput & { id: number; saleId: number | null; tokenValue: number; createdAt: string; voided?: number | null };
 type Sale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number; unitPrice: number }[] };
-type Detail = { account: Account; sales: Sale[]; payments: Payment[] };
+type Detail = { account: Account; sales: Sale[]; payments: Payment[]; history: AccountHistory };
 export type Product = {
   id: number; name: string; brand: string; presentation: string; price: number; active: 0 | 1;
   stock: number; hasPhoto: 0 | 1; packageName: string; unitsPerPackage: number;
 };
 
 export const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
-const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
+const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'America/Bogota' });
 export const emptyPayment = { cash: 0, transfer: 0, tokens: 0 };
 export const totalPayment = (payment: PaymentInput, rate = tokenValue) => payment.cash + payment.transfer + payment.tokens * rate;
 const normalize = (name: string) => name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
@@ -102,6 +103,40 @@ function SaleLines({ sale }: { sale: Sale }) {
   ))}</ul>;
 }
 
+type HistorySources = { sales: Map<number, Sale>; payments: Map<number, Payment> };
+
+function HistoryTimeline({ cycle, sources }: { cycle: AccountCycle; sources: HistorySources }) {
+  return <ol className="ledger-list account-timeline">{[...cycle.movements].reverse().map((movement) => {
+    const sale = movement.kind === 'sale' ? sources.sales.get(movement.sourceId) : undefined;
+    const payment = movement.kind === 'payment' ? sources.payments.get(movement.sourceId) : undefined;
+    const title = movement.kind === 'void' ? 'Anulación de venta #' + movement.sourceId
+      : payment ? (payment.saleId ? 'Pago de venta #' + payment.saleId : 'Abono #' + payment.id)
+        : 'Cargo #' + movement.sourceId;
+    return <li key={movement.id}>
+      <div className="row-between">
+        <strong>{title}{(sale?.voided || payment?.voided) ? ' · Anulado' : ''}</strong>
+        <strong>{money.format(movement.amount)}</strong>
+      </div>
+      <div className="row-between account-movement-meta">
+        <time dateTime={movement.createdAt}>{date.format(new Date(movement.createdAt))}</time>
+        <span>Saldo después: <strong>{money.format(movement.balanceAfter)}</strong></span>
+      </div>
+      {sale && <SaleLines sale={sale} />}
+      {payment && <p><PaymentBreakdown payment={payment} /></p>}
+      {movement.reason && <p>{movement.reason}</p>}
+    </li>;
+  })}</ol>;
+}
+
+function ClosedCycle({ cycle, sources }: { cycle: AccountCycle; sources: HistorySources }) {
+  const [open, setOpen] = useState(false);
+  return <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>Del <time dateTime={cycle.openedAt}>{date.format(new Date(cycle.openedAt))}</time>
+      {cycle.closedAt && <> al <time dateTime={cycle.closedAt}>{date.format(new Date(cycle.closedAt))}</time></>}</summary>
+    {open && <HistoryTimeline cycle={cycle} sources={sources} />}
+  </details>;
+}
+
 function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Account) => void }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -117,6 +152,7 @@ function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Acc
       const result = await api<Detail>('accounts/' + id);
       setDetail(result);
       onBalance(result.account);
+      return result;
     } catch (error) {
       setLoadError(message(error));
     }
@@ -133,8 +169,9 @@ function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Acc
     try {
       const receipt = await write('accounts/' + id + '/payments', { payment });
       setPayment(emptyPayment);
-      setStatus('Abono #' + receipt.id + ' guardado.');
-      await load();
+      const updated = await load();
+      setStatus('Abono #' + receipt.id + ' guardado.' + (updated?.account.balance === 0
+        ? ' Cuenta saldada. Los movimientos pasaron al historial anterior.' : ''));
     } catch (error) {
       setError(message(error));
     } finally {
@@ -146,6 +183,10 @@ function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Acc
   if (!detail) return <p role="status">Cargando cuenta…</p>;
 
   const paid = totalPayment(payment);
+  const sources = {
+    sales: new Map(detail.sales.map((sale) => [sale.id, sale])),
+    payments: new Map(detail.payments.map((entry) => [entry.id, entry])),
+  };
   return (
     <section className="ledger" aria-label="Detalle de la cuenta">
       <div className="section-title"><h3>{detail.account.name}</h3><strong>Saldo {money.format(detail.account.balance)}</strong></div>
@@ -160,28 +201,15 @@ function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Acc
         </form>
       )}
       {status && <p role="status">{status}</p>}
-      <div className="ledger-columns">
-        <section><h4>Consumos</h4>
-          {!detail.sales.length ? <p>Sin consumos.</p> : <ul className="ledger-list">{detail.sales.map((sale) => (
-            <li key={sale.id}>
-              <div className="row-between"><strong>Venta #{sale.id}{sale.voided ? ' · Anulada' : ''}</strong><strong>{money.format(sale.total)}</strong></div>
-              <time dateTime={sale.createdAt}>{date.format(new Date(sale.createdAt))}</time>
-              <SaleLines sale={sale} />
-            </li>
-          ))}</ul>}
-        </section>
-        <section><h4>Pagos</h4>
-          {!detail.payments.length ? <p>Sin pagos.</p> : <ul className="ledger-list">{detail.payments.map((entry) => (
-            <li key={entry.id}>
-              <div className="row-between"><strong>{entry.saleId ? 'Pago de venta #' + entry.saleId : 'Abono #' + entry.id}
-                {entry.voided ? ' · Anulado' : ''}</strong>
-                <strong>{money.format(totalPayment(entry, entry.tokenValue))}</strong></div>
-              <time dateTime={entry.createdAt}>{date.format(new Date(entry.createdAt))}</time>
-              <p><PaymentBreakdown payment={entry} /></p>
-            </li>
-          ))}</ul>}
-        </section>
-      </div>
+      <section aria-labelledby="current-account-history">
+        <h4 id="current-account-history">Historial actual</h4>
+        {detail.history.current ? <HistoryTimeline cycle={detail.history.current} sources={sources} />
+          : <p>Sin movimientos pendientes. Los próximos cargos iniciarán un nuevo historial.</p>}
+      </section>
+      {detail.history.closed.length > 0 && <details className="account-history-archive">
+        <summary>Historial anterior ({detail.history.closed.length})</summary>
+        {detail.history.closed.map((cycle) => <ClosedCycle key={cycle.id} cycle={cycle} sources={sources} />)}
+      </details>}
     </section>
   );
 }

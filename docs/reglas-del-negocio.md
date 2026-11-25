@@ -33,6 +33,7 @@
 ## Cuentas por nombre y cobros
 
 - Una venta puede cobrarse al momento o anotarse a nombre de la persona. Una cuenta puede conservar saldo de un día a otro y recibir nuevos cargos y abonos.
+- El historial de la cuenta muestra el detalle y la fecha y hora de cargos, abonos y anulaciones. Un saldo mayor a cero mantiene el historial abierto. Al saldar la cuenta, se archiva ese historial y el siguiente cargo inicia uno nuevo con el mismo cliente.
 - Un mismo pago puede combinar efectivo, transferencia y fichas. Las transferencias van a una sola cuenta receptora.
 - Se conserva el detalle de cargos y abonos. Los cobros se incluyen en el turno en que se reciben, incluso cuando pagan una deuda anterior. El cierre distingue lo vendido, lo cobrado por cada medio y lo que queda pendiente.
 

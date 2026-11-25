@@ -130,6 +130,8 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--ac
 .ledger-list > li { background: var(--paper); border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.75rem; margin-bottom: 0.55rem; overflow-wrap: anywhere; }
 .ledger-list time { display: block; margin-top: 0.3rem; color: var(--secondary-text); }
 .ledger-list p { margin-bottom: 0; }
+.account-movement-meta { align-items: baseline; color: var(--secondary-text); font-size: 0.9rem; }
+.account-history-archive > details { margin-top: 0.55rem; }
 .row-between, .sale-lines li { display: flex; justify-content: space-between; gap: 0.5rem 1rem; flex-wrap: wrap; }
 .sale-lines li { padding-block: 0.25rem; }
 .billiard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); gap: 0.55rem; list-style: none; padding: 0; }
