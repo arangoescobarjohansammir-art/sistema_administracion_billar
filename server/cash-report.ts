@@ -12,11 +12,12 @@ type DetailTable = { title: string; columns: Column[]; rows: string[][] };
 const club = 'Club de Tejo Patio Bonito';
 const manager = 'Humberto Escobar';
 const zone = 'America/Bogota';
-const ink = '#1d2640';
-const muted = '#515e76';
-const violet = '#4933bd';
-const tint = '#f0edff';
-const rule = '#dfe2ef';
+const ink = '#172a30';
+const muted = '#46585a';
+const petrol = '#174b57';
+const copper = '#a45130';
+const tint = '#e3eeed';
+const rule = '#d8d7cd';
 const pageLeft = 46;
 const pageWidth = 520;
 const pageBottom = 736;
@@ -143,7 +144,7 @@ export function renderCashReport(database: DatabaseSync, data: ReportData, gener
 
   function page(cover = false) {
     doc.addPage();
-    doc.rect(pageLeft, 42, 4, cover ? 46 : 30).fill(violet);
+    doc.rect(pageLeft, 42, 4, cover ? 46 : 30).fill(copper);
     doc.fillColor(ink).font('Helvetica-Bold').fontSize(cover ? 22 : 14)
       .text(club, pageLeft + 12, 42, { lineBreak: false });
     doc.fillColor(muted).font('Helvetica').fontSize(cover ? 12 : 9)
@@ -154,7 +155,7 @@ export function renderCashReport(database: DatabaseSync, data: ReportData, gener
 
   function section(title: string) {
     if (y + 48 > pageBottom) page();
-    doc.fillColor(violet).font('Helvetica-Bold').fontSize(12).text(title, pageLeft, y, { lineBreak: false });
+    doc.fillColor(petrol).font('Helvetica-Bold').fontSize(12).text(title, pageLeft, y, { lineBreak: false });
     y += 18;
   }
 
@@ -184,7 +185,7 @@ export function renderCashReport(database: DatabaseSync, data: ReportData, gener
     function header(continued = false) {
       section(continued ? title + ' (continuación)' : title);
       doc.rect(pageLeft, y, pageWidth, headingHeight).fill(tint);
-      doc.fillColor(violet).font('Helvetica-Bold').fontSize(8.5);
+      doc.fillColor(petrol).font('Helvetica-Bold').fontSize(8.5);
       let x = pageLeft;
       for (const item of columns) {
         const line = item.label;
@@ -212,7 +213,7 @@ export function renderCashReport(database: DatabaseSync, data: ReportData, gener
         }
         const used = Math.min(capacity, lines - offset);
         const height = used * lineHeight + rowPadding;
-        if (rowIndex % 2 === 1) doc.rect(pageLeft, y, pageWidth, height).fill('#f8f9fc');
+        if (rowIndex % 2 === 1) doc.rect(pageLeft, y, pageWidth, height).fill('#f8f5ee');
         doc.fillColor(ink).font('Helvetica').fontSize(9);
         let x = pageLeft;
         for (const [index, item] of columns.entries()) {
@@ -232,7 +233,7 @@ export function renderCashReport(database: DatabaseSync, data: ReportData, gener
 
   try {
     page(true);
-    doc.fillColor(violet).font('Helvetica-Bold').fontSize(11)
+    doc.fillColor(petrol).font('Helvetica-Bold').fontSize(11)
       .text('Turno #' + text(shift.id), pageLeft, 91, { lineBreak: false });
     table('Identificación del turno', [column('Dato', 132), column('Detalle', 128), column('Dato', 110), column('Detalle', 150)], [
       ['Encargado', manager, 'Cajero del turno', text(shift.cashier)],

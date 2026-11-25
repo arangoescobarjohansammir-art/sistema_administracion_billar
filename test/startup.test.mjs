@@ -22,6 +22,12 @@ test('mantiene unidos el servidor y la pantalla si se recompila mientras está a
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   const html = await response.text();
+  const icon = html.match(/href="(\/assets\/[^"]+\.png)"/)?.[1];
+  assert.ok(icon);
+  const iconResponse = await server.fetch(icon);
+  assert.equal(iconResponse.status, 200);
+  assert.equal(iconResponse.headers.get('content-type'), 'image/png');
+  assert.equal(Buffer.from(await iconResponse.arrayBuffer()).subarray(1, 4).toString(), 'PNG');
   const js = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
   assert.ok(js);
   const original = await (await server.fetch(js)).text();

@@ -6,6 +6,7 @@ import { adminSnapshotId, alertPeriodStart, clubDay, clubTimeZone, dashboardRefr
 import { billiardTables } from '../shared/billiard';
 import { courtLabel, tejoCourtsPerType } from '../shared/tejo';
 import { demoSnapshot } from './demo';
+import clubIcon from '../shared/brand/club-icon.png';
 import './style.css';
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -31,7 +32,7 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Brand() {
-  return <div className="brand"><span className="mark" aria-hidden="true">PB</span>
+  return <div className="brand"><img className="mark" src={clubIcon} width={48} height={48} alt="" />
     <div><p>Club de Tejo Patio Bonito</p><h1>Administración</h1></div>
   </div>;
 }

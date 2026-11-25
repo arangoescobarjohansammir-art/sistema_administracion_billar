@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Operator } from '../shared/operators';
 import { api, message } from './Accounts';
+import clubLogo from '../shared/brand/club-logo.png';
 
 export type CashSession = { setupNeeded: boolean; setupCodeRequired?: boolean; operator: Operator | null };
 
@@ -33,7 +34,7 @@ export function Access({ session, onChange }: { session: CashSession; onChange: 
 
   return <main className="access-page">
     <form onSubmit={submit} className="access-card">
-      <p>Club de Tejo Patio Bonito</p>
+      <img className="access-logo" src={clubLogo} width={160} height={160} alt="Club de Tejo Patio Bonito" />
       <h1>{setupNeeded ? 'Configurar acceso a la caja' : 'Iniciar sesión en caja'}</h1>
       {setupNeeded && <p>Crea la cuenta local del administrador. Después podrás dar un PIN a cada cajero.</p>}
       <fieldset className="field-grid" disabled={busy}>

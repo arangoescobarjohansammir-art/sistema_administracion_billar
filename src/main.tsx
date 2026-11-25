@@ -9,6 +9,7 @@ import { QuickSale } from './QuickSale';
 import { Access, type CashSession } from './Access';
 import { Staff } from './Staff';
 import type { Operator } from '../shared/operators';
+import clubIcon from '../shared/brand/club-icon.png';
 import { useCajaKeyboard } from './keyboard';
 import './style.css';
 
@@ -134,8 +135,8 @@ function App({ operator, onLogout }: { operator: Operator; onLogout: () => void 
     <div id="caja-app">
       <header className="app-header" ref={header}>
         <div className="app-header-inner">
-          <div className="app-brand"><span className="app-mark" aria-hidden="true">TB</span>
-            <div><h1>Tejo &amp; Billar</h1><p>Punto de venta</p></div></div>
+          <div className="app-brand"><img className="app-mark" src={clubIcon} width={48} height={48} alt="" />
+            <div><h1>Club de Tejo Patio Bonito</h1><p>Punto de venta</p></div></div>
           <div className="app-session">
             <AppClock />
             <span className="app-shift" data-open={cashOpen === true}>

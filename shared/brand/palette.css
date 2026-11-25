@@ -1,0 +1,21 @@
+:root {
+  --ink: #172a30;
+  --secondary-text: #46585a;
+  --paper: #fffdf8;
+  --background: #f2f0ea;
+  --surface-tint: #f8f5ee;
+  --neutral: #f0ede5;
+  --line: #d8d7cd;
+  --control-line: #aeb9b5;
+  --accent: #174b57;
+  --accent-dark: #103440;
+  --accent-ink: #1d4650;
+  --accent-soft: #e3eeed;
+  --on-accent: #fffdf8;
+  --copper: #a45130;
+  --focus: #97502e;
+  --rust: #84391f;
+  --orange-soft: #faeadb;
+  --positive-ink: #245e4a;
+  --positive-soft: #e6efe7;
+}
