@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { cashMovements, expectedCashCounts, type CashMovementKind, type SavedCashCount } from '../shared/cash.js';
 import { type createAccounts, record, ValidationError, whole } from './accounts.js';
-import { activeShiftId } from './cash-ledger.js';
+import { activeShiftId, shiftTokenTotals } from './cash-ledger.js';
 import { cashReportFilename, renderCashReport } from './cash-report.js';
 import { readJson, sendJson } from './http.js';
 import type { Audit } from './audit.js';
@@ -155,7 +155,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     ].join(' ')).get(id);
     const payment = database.prepare([
       'SELECT COALESCE(SUM(cash), 0) AS cash, COALESCE(SUM(transfer), 0) AS transfer,',
-      'COALESCE(SUM(tokens), 0) AS tokens, COALESCE(SUM(tokens * token_value), 0) AS tokenAmount,',
+      'COALESCE(SUM(tokens * token_value), 0) AS tokenAmount,',
       'COALESCE(SUM(CASE WHEN valid_account_payments.sale_id IS NULL THEN cash + transfer + tokens * token_value ELSE 0 END), 0) AS accountCollections',
       'FROM cash_shift_payments JOIN valid_account_payments ON valid_account_payments.id = payment_id WHERE shift_id = ?',
     ].join(' ')).get(id);
@@ -167,26 +167,15 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     const purchasesExpected = shift.purchasesExpected ?? Number(movement?.purchases);
     const transferExpected = shift.transferExpected ?? Number(payment?.transfer);
     const pending = shift.pendingBalance ?? readPendingBalance();
-    const issued = database.prepare([
-      'SELECT (SELECT COUNT(*) FROM cash_shift_tokens WHERE shift_id = ?) +',
-      '(SELECT COUNT(*) FROM cash_shift_slot_tokens WHERE shift_id = ?) AS value',
-    ].join(' ')).get(id, id);
-    const redeemed = database.prepare([
-      'SELECT COALESCE(SUM(tokens), 0) AS value FROM cash_shift_redemptions',
-      'JOIN tejo_redemptions ON tejo_redemptions.id = redemption_id WHERE shift_id = ?',
-    ].join(' ')).get(id);
-    const tokensReceived = Number(payment?.tokens);
-    const tokensIssued = Number(issued?.value);
-    const tokensRedeemed = Number(redeemed?.value);
+    const tokens = shiftTokenTotals(database, id, shift.openingTokens === null ? null : Number(shift.openingTokens));
     const expectedTokens = shift.expectedTokens === null
-      ? shift.openingTokens === null ? null : Number(shift.openingTokens) + tokensReceived + tokensRedeemed - tokensIssued
+      ? tokens.expectedTokens
       : Number(shift.expectedTokens);
     return {
       salesCount: Number(sale?.count), salesTotal: Number(sale?.total),
       cashReceived: Number(payment?.cash), transferExpected: Number(transferExpected),
-      tokensReceived, tokenAmount: Number(payment?.tokenAmount),
+      ...tokens, expectedTokens, tokenAmount: Number(payment?.tokenAmount),
       accountCollections: Number(payment?.accountCollections), pendingBalance: Number(pending),
-      tokensIssued, tokensRedeemed, expectedTokens,
       tokenDifference: shift.countedTokens === null || expectedTokens === null ? null : Number(shift.countedTokens) - expectedTokens,
       salesExpected: Number(salesExpected), purchasesExpected: Number(purchasesExpected),
       salesDifference: shift.salesCounted === null ? null : Number(shift.salesCounted) - Number(salesExpected),

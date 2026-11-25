@@ -25,6 +25,7 @@
 - El canje de fichas físicas por productos se registra al cobrar en **Venta**. Los consumos cubiertos directamente por un chico se registran en **Tejo**.
 - Se registran por separado el cargo al perdedor, la elección de cada jugador, las fichas entregadas y las fichas recibidas por canje o pago. Un mismo derecho de un chico se usa una sola vez.
 - Un derecho puede quedar pendiente hasta registrar la entrega de la ficha o los productos. Para liberar la cancha hay que registrar cómo se usaron los derechos pendientes. El saldo de dinero puede seguir fiado en las cuentas por nombre.
+- Si en caja faltan fichas para entregar a todo el grupo, se registra el chico con todos los derechos pendientes. El cajero elige a quién entrega cada ficha disponible o registra un consumo. Cuando entran más fichas, puede completar las entregas pendientes.
 
 ## Cuentas por nombre y cobros
 

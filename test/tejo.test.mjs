@@ -5,6 +5,54 @@ import { testServer } from './support/local-server.mjs';
 
 const noPayment = { cash: 0, transfer: 0, tokens: 0 };
 
+test('registra chicos con fichas pendientes y entrega solo las disponibles', { timeout: 20000 }, async (t) => {
+  const { start, json, fetch, cleanup, openShift } = await testServer();
+  t.after(cleanup);
+  await start();
+  await openShift(100_000, 1);
+  const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
+  const readCash = async () => (await json('/api/cash', 200)).active.totals;
+  const { id } = await post('/api/tejo', 201, { courtType: 'largo', courtNumber: 1, playerCount: 2 });
+  const path = '/api/tejo/' + id;
+  const registration = { issueAll: true, requestId: randomUUID() };
+  const { id: roundId } = await post(path + '/record', 201, registration);
+  const { active: [group], availableTokens } = await json('/api/tejo', 200);
+  assert.equal(availableTokens, 1);
+  assert.equal(group.rounds.length, 1);
+  assert.deepEqual(group.rounds[0].benefits.map(({ issuedAt }) => issuedAt), [null, null]);
+  assert.equal((await readCash()).expectedTokens, 1);
+
+  const attempts = group.players.map(({ id: playerId }) => ({
+    roundId, playerId, choice: 'token', requestId: randomUUID(),
+  }));
+  const responses = await Promise.all(attempts.map((attempt) => fetch(path + '/flex-benefits', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(attempt),
+  })));
+  assert.deepEqual(responses.map(({ status }) => status).sort(), [201, 409]);
+  const deliveredIndex = responses.findIndex(({ status }) => status === 201);
+  await post(path + '/flex-benefits', 200, attempts[deliveredIndex]);
+  assert.equal((await readCash()).expectedTokens, 0);
+
+  await post(path + '/assign', 201, { losses: [{ playerId: group.players[0].id, count: 1, name: 'Laura' }] });
+  const [account] = await json('/api/accounts', 200);
+  await post('/api/accounts/' + account.id + '/payments', 201, { payment: { ...noPayment, tokens: 1 } });
+  assert.equal((await readCash()).expectedTokens, 1);
+  assert.equal((await post(path + '/record', 200, registration)).id, roundId);
+  await post(path + '/flex-benefits', 201, attempts[1 - deliveredIndex]);
+  const { tokensIssued, tokensReceived, expectedTokens } = await readCash();
+  assert.deepEqual({ tokensIssued, tokensReceived, expectedTokens }, { tokensIssued: 2, tokensReceived: 1, expectedTokens: 0 });
+  await post(path + '/close', 201, {});
+
+  const second = await json('/api/accounts', 201, 'POST', { name: 'Andrés' });
+  const legacy = await post('/api/tejo', 201, { courtType: 'maxi', courtNumber: 1, players: [account.id, second.id] });
+  const legacyPath = '/api/tejo/' + legacy.id;
+  const legacyRound = await post(legacyPath + '/rounds', 201, { loserId: second.id, issueAll: true, payment: noPayment });
+  await post(legacyPath + '/benefits', 409, { roundId: legacyRound.id, playerId: second.id, choice: 'token' });
+  const updated = await json('/api/tejo', 200);
+  assert.deepEqual(updated.active[0].rounds[0].benefits.map(({ issuedAt }) => issuedAt), [null, null]);
+  assert.equal((await readCash()).expectedTokens, 0);
+});
+
 test('separa las canchas y registra cada chico y canje una sola vez', { timeout: 20000 }, async (t) => {
   const { start, stop, json, cleanup, openShift, recordCashCount } = await testServer();
   t.after(cleanup);

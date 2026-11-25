@@ -5,6 +5,7 @@ import { type createAccounts, paymentFields, paymentTotal, saleItems, Validation
 import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
 import { flexibleTejo } from './tejo-flex.js';
+import { shiftTokenTotals } from './cash-ledger.js';
 
 type Accounts = ReturnType<typeof createAccounts>;
 type Payment = NonNullable<ReturnType<typeof paymentFields>>;
@@ -65,7 +66,13 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     '  PRIMARY KEY (round_id, account_id), CHECK (issued_at IS NULL OR redemption_id IS NULL)',
     ') STRICT;',
   ].join('\n'));
-  const flexible = flexibleTejo(database, accounts);
+  function availableTokens() {
+    const shift = database.prepare('SELECT id, opening_tokens AS openingTokens FROM cash_shifts WHERE closed_at IS NULL').get();
+    if (!shift || shift.openingTokens === null) return null;
+    return Math.max(0, shiftTokenTotals(database, Number(shift.id), Number(shift.openingTokens)).expectedTokens ?? 0);
+  }
+
+  const flexible = flexibleTejo(database, accounts, availableTokens);
 
   const selectSession = 'SELECT id, court_type AS courtType, court_number AS courtNumber, opened_at AS openedAt, closed_at AS closedAt FROM tejo_sessions';
 
@@ -125,7 +132,8 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
       'INSERT INTO tejo_rounds (session_id, number, loser_id, rate, sale_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     ].join(' ')).run(sessionId, number, loserId, tejoProductValue, saleId, createdAt).lastInsertRowid);
     const benefit = database.prepare('INSERT INTO tejo_benefits (round_id, account_id, issued_at) VALUES (?, ?, ?)');
-    for (const member of members) benefit.run(roundId, Number(member.id), issueAll ? createdAt : null);
+    const issuedAt = issueAll && (availableTokens() ?? 0) >= members.length ? createdAt : null;
+    for (const member of members) benefit.run(roundId, Number(member.id), issuedAt);
     return roundId;
   }
 
@@ -184,6 +192,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     if (benefit.issuedAt !== null || benefit.redemptionId !== null) throw new ValidationError(409, 'El participante ya usó su derecho en ese chico.');
     if (choice === 'token') {
       accounts.requireShift();
+      if (!availableTokens()) throw new ValidationError(409, 'No hay fichas disponibles en caja. La entrega sigue pendiente.');
       database.prepare('UPDATE tejo_benefits SET issued_at = ? WHERE round_id = ? AND account_id = ?')
         .run(new Date().toISOString(), roundId, playerId);
       return roundId;
@@ -257,6 +266,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
         : { ...session, players: players(Number(session.id)), rounds: legacy };
     }
     return {
+      availableTokens: availableTokens(),
       active: active.map(describe),
       recent: recent.map(describe),
       physicalRedemptions: physicalRedemptions(),

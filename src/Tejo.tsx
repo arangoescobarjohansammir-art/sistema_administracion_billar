@@ -14,7 +14,7 @@ type Benefit = { accountId: number; customerId?: number | null; name: string; is
 type Round = { id: number; number: number; loser: string | null; loserId: number | null; total: number; benefits: Benefit[]; flexible?: boolean };
 type Group = { id: number; courtType: TejoType; courtNumber: number; flexible?: boolean; players: Player[]; rounds: Round[] };
 type RedeemEntry = { groupId: number; roundId: number; player: Benefit; flexible?: boolean };
-type Overview = { active: Group[]; recent: Group[] };
+type Overview = { active: Group[]; recent: Group[]; availableTokens: number | null };
 type Action = (path: string, payload: object, success: string) => Promise<boolean>;
 type Basket = { product: Product; quantity: number }[];
 const searchText = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
@@ -29,8 +29,22 @@ function StartGroup({ locked, onStart }: { locked: boolean; onStart: (count: num
   </form>;
 }
 
-function RecordChicos({ group, accounts, locked, act }: { group: Group; accounts: Account[]; locked: boolean; act: Action }) {
+function IssueAllTokens({ checked, onChange, canIssueAll, locked }: {
+  checked: boolean; onChange: (checked: boolean) => void; canIssueAll: boolean; locked?: boolean;
+}) {
+  return <>
+    <label className="check"><input type="checkbox" checked={canIssueAll && checked} disabled={locked || !canIssueAll}
+      onChange={(event) => onChange(event.target.checked)} />
+      Ya entregué una ficha a cada jugador de este chico</label>
+    {!canIssueAll && <p>Puedes registrar el chico y dejar la entrega de fichas pendiente.</p>}
+  </>;
+}
+
+function RecordChicos({ group, accounts, locked, act, availableTokens }: {
+  group: Group; accounts: Account[]; locked: boolean; act: Action; availableTokens: number | null;
+}) {
   const [issueAll, setIssueAll] = useState(false);
+  const canIssueAll = (availableTokens ?? 0) >= group.players.length;
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [names, setNames] = useState<Record<number, string>>({});
   const pending = group.rounds.filter((round) => round.loser === null);
@@ -55,10 +69,10 @@ function RecordChicos({ group, accounts, locked, act }: { group: Group; accounts
         <button type="button" className="secondary" disabled={locked || group.players.length >= 20}
           onClick={() => void act(base + '/guest', {}, 'Jugador agregado para los próximos chicos.')}>Agregar jugador</button></div>
       <p>{group.players.map((player) => player.name + ' (' + group.rounds.filter((round) => round.loserId === player.id).length + ' perdidos)').join(' · ')}</p>
-      <label className="check"><input type="checkbox" checked={issueAll} disabled={locked} onChange={(event) => setIssueAll(event.target.checked)} />
-        Ya entregué una ficha a cada jugador de este chico</label>
+      <IssueAllTokens checked={issueAll} onChange={setIssueAll} canIssueAll={canIssueAll} locked={locked} />
       <button type="button" disabled={locked} onClick={async () => {
-        if (await act(base + '/record', { issueAll }, 'Chico registrado. Puedes asignar quién perdió después.')) setIssueAll(false);
+        if (await act(base + '/record', { issueAll: canIssueAll && issueAll },
+          'Chico registrado. Puedes asignar quién perdió después.')) setIssueAll(false);
       }}>Registrar chico {group.rounds.length + 1}</button>
     </div>
     {pending.length > 0 && <form onSubmit={save}>
@@ -82,18 +96,21 @@ function RecordChicos({ group, accounts, locked, act }: { group: Group; accounts
   </>;
 }
 
-function RegisterRound({ group, locked, act }: { group: Group; locked: boolean; act: Action }) {
+function RegisterRound({ group, locked, act, availableTokens }: {
+  group: Group; locked: boolean; act: Action; availableTokens: number | null;
+}) {
   const [loser, setLoser] = useState('');
   const [issues, setIssues] = useState(false);
   const [payment, setPayment] = useState(emptyPayment);
   const total = group.players.length * tejoProductValue;
   const due = total - totalPayment(payment);
+  const canIssueAll = availableTokens !== null && availableTokens + payment.tokens >= group.players.length;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!loser || due < 0 || locked) return;
     if (await act('tejo/' + group.id + '/rounds', {
-      loserId: Number(loser), issueAll: issues, payment,
+      loserId: Number(loser), issueAll: canIssueAll && issues, payment,
     }, 'Chico registrado.')) {
       setLoser('');
       setIssues(false);
@@ -109,8 +126,7 @@ function RegisterRound({ group, locked, act }: { group: Group; locked: boolean; 
           <option value="">Seleccionar jugador</option>
           {group.players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
         </select></label>
-        <label className="check"><input type="checkbox" checked={issues} onChange={(event) => setIssues(event.target.checked)} />
-          Ya entregué una ficha a cada participante</label>
+        <IssueAllTokens checked={issues} onChange={setIssues} canIssueAll={canIssueAll} />
         <PaymentFields value={payment} onChange={setPayment} />
         {due < 0 ? <p role="alert">El pago supera el valor del chico.</p> : <p>Saldo a cuenta de quien perdió: <strong>{money.format(due)}</strong></p>}
         <button disabled={!loser || due < 0}>Guardar chico</button>
@@ -250,8 +266,8 @@ function RedeemedProducts({ redemption }: { redemption: Redemption }) {
   ))}</ul>;
 }
 
-function RoundHistory({ group, locked, onRedeem, act }: {
-  group: Group; locked?: boolean; onRedeem?: (round: Round, player: Benefit) => void; act?: Action;
+function RoundHistory({ group, locked, onRedeem, act, availableTokens }: {
+  group: Group; locked?: boolean; onRedeem?: (round: Round, player: Benefit) => void; act?: Action; availableTokens?: number | null;
 }) {
   if (!group.rounds.length) return <p>Sin chicos registrados.</p>;
   return (
@@ -268,7 +284,7 @@ function RoundHistory({ group, locked, onRedeem, act }: {
               {benefit.redemption.extra > 0 && <p>Excedente: {money.format(benefit.redemption.extra)}</p>}
             </>}
             {!benefit.issuedAt && !benefit.redemption && act && onRedeem && <div className="actions">
-              <button className="secondary" type="button" disabled={locked} onClick={() => void act('tejo/' + group.id + (round.flexible ? '/flex-benefits' : '/benefits'), {
+              <button className="secondary" type="button" disabled={locked || !availableTokens} onClick={() => void act('tejo/' + group.id + (round.flexible ? '/flex-benefits' : '/benefits'), {
                 roundId: round.id, playerId: benefit.accountId, choice: 'token',
               }, 'Ficha entregada y registrada.')}>Entregar ficha</button>
               <button className="secondary" type="button" disabled={locked} onClick={() => onRedeem(round, benefit)}>Registrar consumo</button>
@@ -369,11 +385,15 @@ export function Tejo() {
               {!group.flexible && <p>{group.players.map((player) => player.name).join(' · ')}</p>}
               <p>{benefits.filter((benefit) => benefit.issuedAt).length} fichas entregadas ·{' '}
                 {benefits.filter((benefit) => benefit.redemption).length} consumos · {pending} pendientes</p>
-              {group.flexible ? <RecordChicos key={group.id} group={group} locked={locked} act={act} accounts={accounts} />
-                : <RegisterRound key={group.id} group={group} locked={locked} act={act} />}
+              <p>{overview.availableTokens === null
+                ? 'Registra el conteo inicial en Caja para habilitar la entrega de fichas.'
+                : <>Fichas disponibles en caja: <strong>{overview.availableTokens}</strong></>}</p>
+              {group.flexible ? <RecordChicos key={group.id} group={group} locked={locked} act={act} accounts={accounts}
+                availableTokens={overview.availableTokens} />
+                : <RegisterRound key={group.id} group={group} locked={locked} act={act} availableTokens={overview.availableTokens} />}
               {redemption && redemption.groupId === group.id && <RedeemForm key={String(redemption.flexible) + ':' + redemption.roundId + ':' + redemption.player.accountId}
                 entry={redemption} accounts={accounts} products={products} locked={locked} act={act} onCancel={() => setRedemption(null)} />}
-              <RoundHistory group={group} locked={locked} act={act}
+              <RoundHistory group={group} locked={locked} act={act} availableTokens={overview.availableTokens}
                 onRedeem={(round, player) => {
                   setError(''); setStatus(''); setRedemption({ groupId: group.id, roundId: round.id, player, flexible: round.flexible });
                 }} />

@@ -6,7 +6,7 @@ import { findProduct, recordInventoryMovement } from './inventory.js';
 type Accounts = ReturnType<typeof createAccounts>;
 const isId = (value: unknown): value is number => whole(value, 1, Number.MAX_SAFE_INTEGER);
 
-export function flexibleTejo(database: DatabaseSync, accounts: Accounts) {
+export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availableTokens: () => number | null) {
   database.exec([
     'CREATE TABLE IF NOT EXISTS tejo_slots (',
     '  id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES tejo_sessions(id),',
@@ -101,7 +101,8 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts) {
       'COALESCE((SELECT MAX(number) FROM tejo_rounds WHERE session_id = ?), 0)) + 1, ?, ?, ?)',
     ].join(' ')).run(session, session, session, tejoProductValue, players.length, now).lastInsertRowid);
     const benefit = database.prepare('INSERT INTO tejo_slot_benefits (round_id, slot_id, issued_at) VALUES (?, ?, ?)');
-    for (const player of players) benefit.run(round, Number(player.id), fields.issueAll ? now : null);
+    const issuedAt = fields.issueAll && (availableTokens() ?? 0) >= players.length ? now : null;
+    for (const player of players) benefit.run(round, Number(player.id), issuedAt);
     return round;
   }
 
@@ -167,6 +168,7 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts) {
     const benefitId = Number(benefit.id);
     const now = new Date().toISOString();
     if (choice === 'token') {
+      if (!availableTokens()) throw new ValidationError(409, 'No hay fichas disponibles en caja. La entrega sigue pendiente.');
       database.prepare('UPDATE tejo_slot_benefits SET issued_at = ? WHERE id = ?').run(now, benefitId);
       return benefitId;
     }
