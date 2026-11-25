@@ -414,10 +414,11 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     const teamSize = teamSizeFor(sessionId);
     const rows = database.prepare([
       'SELECT played.id, played.number, loser_slot AS loserId, customer_accounts.name AS loser,',
-      'rate, player_count AS playerCount, ' + roundTotal + ' AS total, sale_id AS saleId,',
+      'rate, player_count AS playerCount, ' + roundTotal + ' AS total, played.sale_id AS saleId, billed_to.name AS chargedTo,',
       'played.created_at AS createdAt, result.losing_team AS losingTeam',
       'FROM tejo_played played LEFT JOIN tejo_team_results result ON result.round_id = played.id',
       'LEFT JOIN tejo_slots ON tejo_slots.id = loser_slot LEFT JOIN customer_accounts ON customer_accounts.id = tejo_slots.account_id',
+      'LEFT JOIN sales billed ON billed.id = played.sale_id LEFT JOIN customer_accounts billed_to ON billed_to.id = billed.account_id',
       'WHERE played.session_id = ? ORDER BY played.number DESC',
     ].join(' ')).all(sessionId);
     const benefits = database.prepare([

@@ -301,9 +301,11 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     ].join(' ')).all(id);
     const payments = database.prepare([
       'SELECT account_payments.id, sale_id AS saleId, a.name, cash, transfer, tokens, token_value AS tokenValue,',
-      'account_payments.created_at AS createdAt, (sale_id IN (SELECT sale_id FROM sale_voids)) AS voided',
-      'FROM cash_shift_payments JOIN account_payments ON account_payments.id = payment_id',
-      'LEFT JOIN customer_accounts a ON a.id = account_payments.account_id WHERE shift_id = ? ORDER BY payment_id DESC',
+      'account_payments.created_at AS createdAt, (reversal.payment_id IS NOT NULL OR COALESCE(sale_id IN (SELECT sale_id FROM sale_voids), 0)) AS voided,',
+      'reversal.reason AS voidReason',
+      'FROM cash_shift_payments JOIN account_payments ON account_payments.id = cash_shift_payments.payment_id',
+      'LEFT JOIN account_payment_voids reversal ON reversal.payment_id = account_payments.id',
+      'LEFT JOIN customer_accounts a ON a.id = account_payments.account_id WHERE shift_id = ? ORDER BY cash_shift_payments.payment_id DESC',
     ].join(' ')).all(id);
     return { shift, totals: summarize(shift), movements, payments, counts: readCounts(id) };
   }
@@ -387,5 +389,15 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
       return sendJson(response, error.status, { error: error.message });
     }
   }
-  return { handle, adminOverview, shiftTotals: (id: number) => summarize(shiftById(id)) };
+  function verifyRefund(shiftId: number, cash: number, tokens: number) {
+    const totals = summarize(shiftById(shiftId));
+    if (cash > 0 && cash > totals.salesExpected) {
+      throw new ValidationError(409, 'El efectivo de ventas es insuficiente para registrar la devolución.');
+    }
+    if (tokens > 0 && (totals.expectedTokens === null || tokens > totals.expectedTokens)) {
+      throw new ValidationError(409, 'Revisa el conteo inicial y las fichas disponibles antes de registrar la devolución.');
+    }
+  }
+
+  return { handle, adminOverview, verifyRefund };
 }

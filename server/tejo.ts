@@ -249,8 +249,9 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     const active = database.prepare(selectSession + ' WHERE closed_at IS NULL ORDER BY court_type, court_number').all();
     const roundList = database.prepare([
       'SELECT tejo_rounds.id, number, loser_id AS loserId, customer_accounts.name AS loser, sales.total,',
-      'tejo_rounds.sale_id AS saleId, tejo_rounds.created_at AS createdAt, rate',
+      'tejo_rounds.sale_id AS saleId, tejo_rounds.created_at AS createdAt, rate, billed_to.name AS chargedTo',
       'FROM tejo_rounds JOIN customer_accounts ON customer_accounts.id = loser_id JOIN sales ON sales.id = tejo_rounds.sale_id',
+      'LEFT JOIN customer_accounts billed_to ON billed_to.id = sales.account_id',
       'WHERE session_id = ? ORDER BY number DESC',
     ].join(' '));
     const benefits = database.prepare([
@@ -286,7 +287,7 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
           '(SELECT COUNT(*) FROM tejo_slot_benefits WHERE issued_at IS NOT NULL) AS total',
         ].join(' ')).get()?.total),
         redeemed: Number(database.prepare('SELECT COALESCE(SUM(tokens), 0) AS total FROM tejo_redemptions WHERE round_id IS NULL').get()?.total),
-        receivedAsPayment: Number(database.prepare('SELECT COALESCE(SUM(tokens), 0) AS total FROM account_payments').get()?.total),
+        receivedAsPayment: Number(database.prepare('SELECT COALESCE(SUM(tokens), 0) AS total FROM valid_account_payments').get()?.total),
       },
     };
   }

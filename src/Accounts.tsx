@@ -110,7 +110,8 @@ function HistoryTimeline({ cycle, sources }: { cycle: AccountCycle; sources: His
     const sale = movement.kind === 'sale' ? sources.sales.get(movement.sourceId) : undefined;
     const payment = movement.kind === 'payment' ? sources.payments.get(movement.sourceId) : undefined;
     const title = movement.kind === 'void' ? 'Anulación de venta #' + movement.sourceId
-      : payment ? (payment.saleId ? 'Pago de venta #' + payment.saleId : 'Abono #' + payment.id)
+      : movement.kind === 'payment_void' ? 'Anulación de abono #' + movement.sourceId
+        : payment ? (payment.saleId ? 'Pago de venta #' + payment.saleId : 'Abono #' + payment.id)
         : 'Cargo #' + movement.sourceId;
     return <li key={movement.id}>
       <div className="row-between">

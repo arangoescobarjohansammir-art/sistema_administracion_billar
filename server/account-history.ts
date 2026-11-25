@@ -4,13 +4,30 @@ import type { AccountCycle, AccountHistory, AccountMovement } from '../shared/ac
 export function createAccountHistory(database: DatabaseSync) {
   database.exec('BEGIN IMMEDIATE');
   try {
-    const exists = database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'account_history_events'").get();
+    const existing = database.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'account_history_events'").get();
+    const upgrade = existing && !String(existing.sql).includes("'payment_void'");
+    if (upgrade) {
+      database.exec(`
+        DROP TRIGGER account_history_sale;
+        DROP TRIGGER account_history_payment;
+        DROP TRIGGER account_history_void;
+        ALTER TABLE account_history_events RENAME TO previous_account_history_events;
+      `);
+    }
     database.exec(`
       CREATE TABLE IF NOT EXISTS account_history_events (
         id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES customer_accounts(id),
-        kind TEXT NOT NULL CHECK (kind IN ('sale', 'payment', 'void')),
+        kind TEXT NOT NULL CHECK (kind IN ('sale', 'payment', 'void', 'payment_void')),
         source_id INTEGER NOT NULL, UNIQUE (kind, source_id)
       ) STRICT;
+    `);
+    if (upgrade) {
+      database.exec(`
+        INSERT INTO account_history_events SELECT * FROM previous_account_history_events;
+        DROP TABLE previous_account_history_events;
+      `);
+    }
+    database.exec(`
       CREATE INDEX IF NOT EXISTS account_history_by_account ON account_history_events(account_id, id);
 
       CREATE TRIGGER IF NOT EXISTS account_history_sale AFTER INSERT ON sales
@@ -25,8 +42,12 @@ export function createAccountHistory(database: DatabaseSync) {
         INSERT INTO account_history_events (account_id, kind, source_id)
         SELECT account_id, 'void', id FROM sales WHERE id = NEW.sale_id AND account_id IS NOT NULL;
       END;
+      CREATE TRIGGER IF NOT EXISTS account_history_payment_void AFTER INSERT ON account_payment_voids BEGIN
+        INSERT INTO account_history_events (account_id, kind, source_id)
+        SELECT account_id, 'payment_void', id FROM account_payments WHERE id = NEW.payment_id AND account_id IS NOT NULL;
+      END;
     `);
-    if (!exists) {
+    if (!existing) {
       // Older records have separate sequences. Keep a sale and its payment together when their timestamps tie.
       database.exec(`
         INSERT INTO account_history_events (account_id, kind, source_id)
@@ -39,6 +60,10 @@ export function createAccountHistory(database: DatabaseSync) {
           UNION ALL
           SELECT sales.account_id, 'void', sales.id, sale_voids.created_at, 2, sales.id, 0
           FROM sale_voids JOIN sales ON sales.id = sale_voids.sale_id WHERE sales.account_id IS NOT NULL
+          UNION ALL
+          SELECT payment.account_id, 'payment_void', payment.id, reversal.created_at, 3, payment.id, 0
+          FROM account_payment_voids reversal JOIN account_payments payment ON payment.id = reversal.payment_id
+          WHERE payment.account_id IS NOT NULL
         ) ORDER BY created_at, category, batch, position;
       `);
     }
@@ -50,15 +75,18 @@ export function createAccountHistory(database: DatabaseSync) {
 
   const events = database.prepare(`
     SELECT event.id, event.kind, event.source_id AS sourceId,
-      CASE event.kind WHEN 'sale' THEN sale.created_at WHEN 'payment' THEN payment.created_at ELSE correction.created_at END AS createdAt,
+      CASE event.kind WHEN 'sale' THEN sale.created_at WHEN 'payment' THEN payment.created_at
+        WHEN 'payment_void' THEN reversal.created_at ELSE correction.created_at END AS createdAt,
       CASE event.kind WHEN 'sale' THEN sale.total
         WHEN 'payment' THEN payment.cash + payment.transfer + payment.tokens * payment.token_value
+        WHEN 'payment_void' THEN payment.cash + payment.transfer + payment.tokens * payment.token_value
         ELSE sale.total - COALESCE(linked.cash + linked.transfer + linked.tokens * linked.token_value, 0) END AS amount,
-      correction.reason
+      COALESCE(correction.reason, reversal.reason) AS reason
     FROM account_history_events event
     LEFT JOIN sales sale ON event.kind IN ('sale', 'void') AND sale.id = event.source_id
-    LEFT JOIN account_payments payment ON event.kind = 'payment' AND payment.id = event.source_id
+    LEFT JOIN account_payments payment ON event.kind IN ('payment', 'payment_void') AND payment.id = event.source_id
     LEFT JOIN sale_voids correction ON event.kind = 'void' AND correction.sale_id = event.source_id
+    LEFT JOIN account_payment_voids reversal ON event.kind = 'payment_void' AND reversal.payment_id = event.source_id
     LEFT JOIN account_payments linked ON event.kind = 'void' AND linked.sale_id = event.source_id
     WHERE event.account_id = ? ORDER BY event.id
   `);
@@ -66,6 +94,7 @@ export function createAccountHistory(database: DatabaseSync) {
   return (accountId: number): AccountHistory => {
     const closed: AccountCycle[] = [];
     const cycleBySale = new Map<number, AccountCycle>();
+    const cycleByPayment = new Map<number, AccountCycle>();
     let current: AccountCycle | null = null;
     let balance = 0;
     for (const event of events.iterate(accountId)) {
@@ -83,9 +112,16 @@ export function createAccountHistory(database: DatabaseSync) {
         original.movements.push({ ...movement, balanceAfter: 0 });
         continue;
       }
+      const paidCycle = kind === 'payment_void' ? cycleByPayment.get(sourceId) : undefined;
+      if (current === null && paidCycle && closed.at(-1) === paidCycle) {
+        closed.pop();
+        paidCycle.closedAt = null;
+        current = paidCycle;
+      }
       if (current === null) current = { id, openedAt: createdAt, closedAt: null, movements: [] };
       if (kind === 'sale') cycleBySale.set(sourceId, current);
-      balance += kind === 'sale' ? amount : -amount;
+      if (kind === 'payment') cycleByPayment.set(sourceId, current);
+      balance += kind === 'sale' || kind === 'payment_void' ? amount : -amount;
       current.movements.push({ ...movement, balanceAfter: balance });
       if (balance === 0) {
         current.closedAt = createdAt;

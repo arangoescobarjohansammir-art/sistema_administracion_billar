@@ -36,6 +36,8 @@
 - El historial de la cuenta muestra el detalle y la fecha y hora de cargos, abonos y anulaciones. Un saldo mayor a cero mantiene el historial abierto. Al saldar la cuenta, se archiva ese historial y el siguiente cargo inicia uno nuevo con el mismo cliente.
 - Un mismo pago puede combinar efectivo, transferencia y fichas. Las transferencias van a una sola cuenta receptora.
 - Se conserva el detalle de cargos y abonos. Los cobros se incluyen en el turno en que se reciben, incluso cuando pagan una deuda anterior. El cierre distingue lo vendido, lo cobrado por cada medio y lo que queda pendiente.
+- El administrador puede anular abonos independientes del turno abierto con motivo y confirmación de la devolución o del error de registro. La anulación devuelve el saldo a la cuenta y ajusta los totales de efectivo, transferencias y fichas del turno.
+- El administrador puede trasladar un cargo pendiente de tejo del turno abierto a otra cuenta, con motivo. El movimiento conserva el registro de la cancha, el chico, los participantes y las entregas.
 
 ## Catálogo e inventario
 

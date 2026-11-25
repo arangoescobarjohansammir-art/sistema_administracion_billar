@@ -45,7 +45,7 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
     '(SELECT share.sale_id FROM sale_credit_shares share WHERE share.share_sale_id = sales.id) AS splitFrom,',
     'EXISTS (SELECT 1 FROM sale_credit_shares share WHERE share.sale_id = sales.id) AS splitPayment,',
     "(SELECT actor_name FROM cash_audit WHERE kind = 'sale' AND target_id = sales.id ORDER BY id LIMIT 1) AS seller,",
-    "(SELECT actor_name FROM cash_audit WHERE kind = 'sale_void' AND target_id = sales.id ORDER BY id LIMIT 1) AS voidedBy",
+    "(SELECT actor_name FROM cash_audit WHERE kind IN ('sale_void', 'tejo_charge_move') AND target_id = sales.id ORDER BY id LIMIT 1) AS voidedBy",
     'FROM cash_shift_sales tracked JOIN sales ON sales.id = tracked.sale_id',
     'LEFT JOIN customer_accounts ON customer_accounts.id = sales.account_id',
     'LEFT JOIN sale_voids v ON v.sale_id = sales.id',
@@ -87,7 +87,8 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
   const paymentsRows = data.payments.map((payment) => [
     date(payment.createdAt),
     (payment.saleId === null ? 'Abono #' + text(payment.id) : 'Venta #' + text(payment.saleId)) +
-      (payment.voided ? ' · Anulada' : '') + '\n' + text(payment.name ?? 'Sin nombre'),
+      (payment.voided ? ' · Anulado' : '') + '\n' + text(payment.name ?? 'Sin nombre') +
+      (payment.voidReason ? '\nMotivo: ' + text(payment.voidReason) : ''),
     money(payment.cash), money(payment.transfer),
     Number(payment.tokens) > 0 ? count(payment.tokens) + ' / ' + money(Number(payment.tokens) * Number(payment.tokenValue)) : '0',
   ]);

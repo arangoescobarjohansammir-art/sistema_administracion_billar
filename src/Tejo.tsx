@@ -17,6 +17,7 @@ type Stake = { productId: number; label: string; quantity: number; unitsPerInput
 type Round = {
   id: number; number: number; loser: string | null; loserId: number | null; total: number; benefits: Benefit[]; flexible?: boolean;
   losingTeam?: TejoTeam | null; charges?: { playerId: number; name: string; amount: number }[];
+  chargedTo?: string | null;
   playerCount?: number; stake?: Stake[];
 };
 type Group = { id: number; courtType: TejoType; courtNumber: number; flexible?: boolean; teamSize?: number; players: Player[]; rounds: Round[] };
@@ -451,8 +452,9 @@ function RoundHistory({ group, accounts = [], locked, onRedeem, act, availableTo
     <ul className="ledger-list">{group.rounds.map((round) => (
       <li key={round.number}>
         <div className="row-between"><strong>Chico {round.number} · {round.losingTeam ? 'perdió el equipo ' + round.losingTeam
-          : round.loser ? (round.flexible ? 'cargo de ' : 'perdió ') + round.loser : 'sin perdedor asignado'}</strong>
+          : round.loser ? (round.flexible ? 'cargo de ' + (round.chargedTo ?? round.loser) : 'perdió ' + round.loser) : 'sin perdedor asignado'}</strong>
           <strong>{money.format(round.total)}</strong></div>
+        {!round.flexible && round.chargedTo && round.loser !== round.chargedTo && <p>Cargo a {round.chargedTo}</p>}
         {Boolean(round.charges?.length) && <ul className="sale-lines" aria-label="Cargos del equipo perdedor">
           {round.charges?.map(({ playerId, name, amount }) => <li key={playerId}><span>{name}</span><strong>{money.format(amount)}</strong></li>)}
         </ul>}

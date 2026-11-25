@@ -13,6 +13,7 @@ import { createAutomaticBackups } from './backups.js';
 import { createOperators } from './operators.js';
 import { createAudit } from './audit.js';
 import { createSaleCorrections } from './sale-corrections.js';
+import { createAccountCorrections } from './account-corrections.js';
 import { createInventoryCounts } from './inventory-counts.js';
 import { readJson, sendJson } from './http.js';
 
@@ -42,6 +43,7 @@ const handleTejo = createTejo(database, accounts);
 const cash = createCash(database, accounts, (id) => backups.afterClose(id), audit);
 const backups = createAutomaticBackups(database, databasePath);
 const saleCorrections = createSaleCorrections(database, accounts, cash, audit);
+const accountCorrections = createAccountCorrections(database, accounts, cash, audit);
 const inventoryCounts = createInventoryCounts(database, accounts, audit);
 
 const contentTypes: Record<string, string> = {
@@ -93,7 +95,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       const before = Number(new URL(request.url ?? '/', `http://${host}`).searchParams.get('before') ?? Number.MAX_SAFE_INTEGER);
       return sendJson(response, 200, audit.list(Number.isSafeInteger(before) && before > 0 ? before : Number.MAX_SAFE_INTEGER));
     }
-    return saleCorrections(request, response, path);
+    if (path === '/api/corrections/sales' || path.startsWith('/api/corrections/sales/')) {
+      return saleCorrections(request, response, path);
+    }
+    return accountCorrections(request, response, path);
   }
   if (path === '/api/products' || path.startsWith('/api/products/')) {
     return handleCatalog(request, response, path);

@@ -1,6 +1,6 @@
 export type AccountMovement = {
   id: number;
-  kind: 'sale' | 'payment' | 'void';
+  kind: 'sale' | 'payment' | 'void' | 'payment_void';
   sourceId: number;
   createdAt: string;
   amount: number;

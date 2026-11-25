@@ -112,6 +112,7 @@ test('conserva el historial con abonos parciales, archiva al saldar y recupera m
       DROP TRIGGER account_history_sale;
       DROP TRIGGER account_history_payment;
       DROP TRIGGER account_history_void;
+      DROP TRIGGER account_history_payment_void;
       DROP TABLE account_history_events;
     `);
     legacy.prepare('UPDATE sales SET created_at = ? WHERE id = ?').run(started, opening.id);

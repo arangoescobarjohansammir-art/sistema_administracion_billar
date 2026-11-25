@@ -103,14 +103,16 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     '  sale_id INTEGER PRIMARY KEY REFERENCES sales(id), created_at TEXT NOT NULL, reason TEXT NOT NULL,',
     '  stock_returned INTEGER NOT NULL CHECK (stock_returned IN (0, 1))',
     ') STRICT;',
+    'CREATE TABLE IF NOT EXISTS account_payment_voids (',
+    '  payment_id INTEGER PRIMARY KEY REFERENCES account_payments(id),',
+    '  created_at TEXT NOT NULL, reason TEXT NOT NULL',
+    ') STRICT;',
     'CREATE TABLE IF NOT EXISTS sale_credit_shares (',
     '  sale_id INTEGER NOT NULL REFERENCES sales(id),',
     '  share_sale_id INTEGER PRIMARY KEY REFERENCES sales(id)',
     ') STRICT;',
     'CREATE INDEX IF NOT EXISTS credit_shares_by_sale ON sale_credit_shares(sale_id);',
     'CREATE VIEW IF NOT EXISTS valid_sales AS SELECT * FROM sales WHERE id NOT IN (SELECT sale_id FROM sale_voids);',
-    'CREATE VIEW IF NOT EXISTS valid_account_payments AS SELECT * FROM account_payments',
-    '  WHERE sale_id IS NULL OR sale_id NOT IN (SELECT sale_id FROM sale_voids);',
     'CREATE INDEX IF NOT EXISTS sales_by_account ON sales(account_id, id);',
     'CREATE INDEX IF NOT EXISTS sales_by_date ON sales(created_at);',
     'CREATE INDEX IF NOT EXISTS items_by_sale ON sale_items(sale_id, id);',
@@ -118,6 +120,17 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     'CREATE INDEX IF NOT EXISTS payments_by_account ON account_payments(account_id, id);',
     'CREATE INDEX IF NOT EXISTS payments_by_date ON account_payments(created_at);',
   ].join('\n'));
+  const paymentsView = database.prepare("SELECT sql FROM sqlite_schema WHERE name = 'valid_account_payments' AND type = 'view'").get();
+  if (!String(paymentsView?.sql ?? '').includes('account_payment_voids')) {
+    database.exec(`
+      BEGIN IMMEDIATE;
+      DROP VIEW IF EXISTS valid_account_payments;
+      CREATE VIEW valid_account_payments AS SELECT * FROM account_payments
+      WHERE (sale_id IS NULL OR sale_id NOT IN (SELECT sale_id FROM sale_voids))
+        AND id NOT IN (SELECT payment_id FROM account_payment_voids);
+      COMMIT;
+    `);
+  }
   const historyFor = createAccountHistory(database);
 
   const accountsSelect = [
@@ -294,7 +307,8 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
   }
 
   const paymentsSelect = 'SELECT id, sale_id AS saleId, cash, transfer, tokens, token_value AS tokenValue, created_at AS createdAt, ' +
-    '(sale_id IN (SELECT sale_id FROM sale_voids)) AS voided FROM account_payments';
+    '(id IN (SELECT payment_id FROM account_payment_voids) OR COALESCE(sale_id IN (SELECT sale_id FROM sale_voids), 0)) AS voided ' +
+    'FROM account_payments';
 
   async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     try {

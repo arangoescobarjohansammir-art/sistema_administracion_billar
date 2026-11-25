@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { auditLabels, type AuditEntry, type Operator } from '../shared/operators';
 import { api, message, money, useOperation } from './Accounts';
+import { AccountCorrections } from './AccountCorrections';
 
 const clock = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' });
 type Sale = {
@@ -210,16 +211,19 @@ function Corrections() {
 }
 
 export function Staff() {
-  const [section, setSection] = useState<'users' | 'audit' | 'corrections'>('users');
+  const [section, setSection] = useState<'users' | 'audit' | 'corrections' | 'payments' | 'tejo'>('users');
   return <section aria-labelledby="staff-title">
     <h2 id="staff-title">Personal y correcciones</h2>
     <nav className="actions accounts-nav" aria-label="Administración de caja">
       <button className="navigation" aria-pressed={section === 'users'} onClick={() => setSection('users')}>Usuarios</button>
       <button className="navigation" aria-pressed={section === 'audit'} onClick={() => setSection('audit')}>Registro</button>
       <button className="navigation" aria-pressed={section === 'corrections'} onClick={() => setSection('corrections')}>Anular ventas</button>
+      <button className="navigation" aria-pressed={section === 'payments'} onClick={() => setSection('payments')}>Anular abonos</button>
+      <button className="navigation" aria-pressed={section === 'tejo'} onClick={() => setSection('tejo')}>Corregir cargos de tejo</button>
     </nav>
     {section === 'users' && <Users />}
     {section === 'audit' && <AuditLog />}
     {section === 'corrections' && <Corrections />}
+    {(section === 'payments' || section === 'tejo') && <AccountCorrections key={section} mode={section} />}
   </section>;
 }

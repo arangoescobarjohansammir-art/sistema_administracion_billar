@@ -62,13 +62,7 @@ export function createSaleCorrections(database: DatabaseSync, accounts: ReturnTy
             throw new ValidationError(409, 'El saldo de ' + share.name + ' ya no cubre su parte. Revisa los abonos de esa cuenta.');
           }
         }
-        const totals = cash.shiftTotals(shiftId);
-        if (Number(sale.cash) > 0 && Number(sale.cash) > totals.salesExpected) {
-          throw new ValidationError(409, 'El efectivo de ventas es insuficiente para registrar la devolución.');
-        }
-        if (Number(sale.tokens) > 0 && (totals.expectedTokens === null || Number(sale.tokens) > totals.expectedTokens)) {
-          throw new ValidationError(409, 'Revisa el conteo inicial y las fichas disponibles antes de registrar la devolución.');
-        }
+        cash.verifyRefund(shiftId, Number(sale.cash), Number(sale.tokens));
         const createdAt = new Date().toISOString();
         const voidSale = database.prepare('INSERT INTO sale_voids VALUES (?, ?, ?, ?)');
         voidSale.run(id, createdAt, reason, Number(stockReturned));

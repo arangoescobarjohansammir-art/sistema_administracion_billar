@@ -24,7 +24,7 @@ type Movement = {
 type Payment = {
   id: number; saleId: number | null; name: string | null; cash: number; transfer: number;
   tokens: number; tokenValue: number; createdAt: string;
-  voided: number | null;
+  voided: number | null; voidReason: string | null;
 };
 type Detail = { shift: Shift; totals: Totals; movements: Movement[]; payments: Payment[]; counts: SavedCashCount[] };
 type Dashboard = { active: Detail | null; previousBase: number | null; previousTokens: number | null; recent: Shift[] };
@@ -338,13 +338,15 @@ function Ledger({ detail }: { detail: Detail }) {
         {!detail.payments.length ? <p>Sin cobros registrados.</p> : <ul className="ledger-list">{detail.payments.map((payment) => (
           <li key={payment.id}>
             <div className="row-between"><strong>{payment.name ?? 'Sin nombre'}</strong>
-              <span>{payment.saleId ? 'Venta #' + payment.saleId : 'Abono #' + payment.id}{payment.voided ? ' · Anulada' : ''}</span></div>
+              <span>{payment.saleId ? 'Venta #' + payment.saleId : 'Abono #' + payment.id}
+                {payment.voided ? (payment.saleId ? ' · Anulada' : ' · Anulado') : ''}</span></div>
             <time dateTime={payment.createdAt}>{date.format(new Date(payment.createdAt))}</time>
             <p>{[
               payment.cash ? 'Efectivo ' + money.format(payment.cash) : '',
               payment.transfer ? 'Transferencia ' + money.format(payment.transfer) : '',
               payment.tokens ? payment.tokens + ' fichas · ' + money.format(payment.tokens * payment.tokenValue) : '',
             ].filter(Boolean).join(' · ')}</p>
+            {payment.voidReason && <p>Motivo de anulación · {payment.voidReason}</p>}
           </li>
         ))}</ul>}
       </section>
