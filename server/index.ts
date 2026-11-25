@@ -10,6 +10,9 @@ import { createTejo } from './tejo.js';
 import { createCash } from './cash.js';
 import { startAdminSync } from './admin.js';
 import { createAutomaticBackups } from './backups.js';
+import { createOperators } from './operators.js';
+import { createAudit } from './audit.js';
+import { createSaleCorrections } from './sale-corrections.js';
 import { readJson, sendJson } from './http.js';
 
 const host = '127.0.0.1';
@@ -29,12 +32,15 @@ database.exec(`
   ) STRICT
 `);
 
-const handleCatalog = createCatalog(database);
-const accounts = createAccounts(database);
+const operators = createOperators(database);
+const audit = createAudit(database);
+const handleCatalog = createCatalog(database, audit);
+const accounts = createAccounts(database, audit);
 const handleBilliards = createBilliards(database, accounts);
 const handleTejo = createTejo(database, accounts);
-const cash = createCash(database, accounts, (id) => backups.afterClose(id));
+const cash = createCash(database, accounts, (id) => backups.afterClose(id), audit);
 const backups = createAutomaticBackups(database, databasePath);
+const saleCorrections = createSaleCorrections(database, accounts, cash, audit);
 
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -68,6 +74,23 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (request.method !== 'GET' && origin &&
     !allowedHosts.some((allowed) => origin === `http://${allowed}`)) {
     return sendJson(response, 403, { error: 'Origen no autorizado.' });
+  }
+  if (path === '/api/session' || path.startsWith('/api/session/') ||
+      path === '/api/operators' || path.startsWith('/api/operators/')) {
+    return operators.handle(request, response, path);
+  }
+  const operator = path.startsWith('/api/') ? operators.sessionFor(request) : null;
+  if (path.startsWith('/api/') && !operator) {
+    return sendJson(response, 401, { code: 'CASH_SESSION_REQUIRED', error: 'Inicia sesión para usar la caja.' });
+  }
+  if (path === '/api/audit' || path.startsWith('/api/corrections/')) {
+    if (operator?.role !== 'admin') return sendJson(response, 403, { error: 'Esta función es para el administrador.' });
+    if (path === '/api/audit') {
+      if (request.method !== 'GET') return sendJson(response, 405, { error: 'Método no permitido.' });
+      const before = Number(new URL(request.url ?? '/', `http://${host}`).searchParams.get('before') ?? Number.MAX_SAFE_INTEGER);
+      return sendJson(response, 200, audit.list(Number.isSafeInteger(before) && before > 0 ? before : Number.MAX_SAFE_INTEGER));
+    }
+    return saleCorrections(request, response, path);
   }
   if (path === '/api/products' || path.startsWith('/api/products/')) {
     return handleCatalog(request, response, path);

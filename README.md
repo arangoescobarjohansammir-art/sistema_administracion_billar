@@ -14,6 +14,14 @@ En **Venta → Cobrar → Fichas**, cada ficha cubre hasta $4.000 en productos. 
 
 El encabezado de la app mantiene visible la fecha y la hora de Colombia.
 
+## Usuarios y correcciones
+
+En el primer acceso a la caja, el administrador crea su usuario local con una contraseña de al menos diez caracteres. Esta cuenta se usa en el computador de caja y sus datos de acceso son independientes del panel móvil. En **Personal → Usuarios**, el administrador puede crear usuarios de cajero con PIN de seis dígitos, cambiar sus PIN y desactivar su acceso. Cada persona inicia sesión con su propia cuenta.
+
+En **Personal → Registro** se puede consultar quién registró una venta directa, un abono, un movimiento de caja o un ajuste de existencias, junto con la hora y el motivo cuando corresponde. La caja toma el nombre del usuario que inicia el turno.
+
+En **Personal → Anular ventas**, el administrador puede anular una venta directa de productos del turno abierto. Confirma si el cobro se devolvió por el medio indicado o nunca se hizo, explica lo ocurrido y registra si se devolvieron todos los productos. La venta original queda visible y marcada como anulada. El sistema recalcula los cobros y saldos, y repone las existencias si se confirma la devolución física. La anulación de transferencias se registra en caja después de confirmar la devolución en el banco. Esta opción cubre las ventas directas del turno abierto.
+
 En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, registra primero ambos fondos, las transferencias verificadas y las fichas físicas. Pulsa **Confirmar conteo y revisar** para revelar los valores esperados y las diferencias. Luego indica la base que dejas y explica cualquier diferencia antes de guardar.
 
 Si necesitas volver a contar, usa **Hacer un recuento** e indica el motivo. El turno y su PDF conservan el primer conteo y los recuentos. Si los movimientos cambian los valores esperados después de revisar, la caja actualiza el cuadre y pide revisarlo antes de guardar.

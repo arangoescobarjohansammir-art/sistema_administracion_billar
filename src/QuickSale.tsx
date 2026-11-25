@@ -8,7 +8,7 @@ import { api, emptyPayment, label, message, money, PaymentBreakdown, PaymentFiel
 type Item = { product: Product; quantity: number };
 type Mode = 'order' | 'cash' | 'transfer' | 'tokens' | 'mixed' | 'credit';
 type TokenUse = 'products' | 'account';
-type RecentSale = { id: number; total: number; createdAt: string; items: { label: string; quantity: number }[]; payment: Payment | null };
+type RecentSale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number }[]; payment: Payment | null };
 type RecentRedemption = { id: number; tokens: number; subtotal: number; extra: number; name: string | null;
   createdAt: string; items: { label: string; quantity: number }[] };
 const normalize = (name: string) => name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
@@ -298,7 +298,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
       </div>
       <details className="recent-sales"><summary>Ventas recientes sin nombre</summary>
         {!recent.length ? <p>Sin ventas sin nombre.</p> : <ul className="ledger-list">{recent.map((sale) => (
-          <li key={sale.id}><div className="row-between"><strong>Venta #{sale.id}</strong><strong>{money.format(sale.total)}</strong></div>
+          <li key={sale.id}><div className="row-between"><strong>Venta #{sale.id}{sale.voided ? ' · Anulada' : ''}</strong><strong>{money.format(sale.total)}</strong></div>
             <time dateTime={sale.createdAt}>{time.format(new Date(sale.createdAt))}</time>
             <p>{sale.items.map((item) => item.quantity + ' × ' + item.label).join(' · ')}</p>
             {sale.payment && <p><PaymentBreakdown payment={sale.payment} /></p>}</li>

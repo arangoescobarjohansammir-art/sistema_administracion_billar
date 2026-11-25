@@ -23,6 +23,7 @@ type Movement = {
 type Payment = {
   id: number; saleId: number | null; name: string | null; cash: number; transfer: number;
   tokens: number; tokenValue: number; createdAt: string;
+  voided: number | null;
 };
 type Detail = { shift: Shift; totals: Totals; movements: Movement[]; payments: Payment[]; counts: SavedCashCount[] };
 type Dashboard = { active: Detail | null; previousBase: number | null; previousTokens: number | null; recent: Shift[] };
@@ -31,8 +32,8 @@ const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: '
 const formatted = (amount: number | null) => amount === null ? '—' : money.format(amount);
 const tokenCount = (amount: number) => amount + (amount === 1 ? ' ficha' : ' fichas');
 
-function Opening({ previousBase, previousTokens, locked, act }: {
-  previousBase: number | null; previousTokens: number | null; locked: boolean; act: Action;
+function Opening({ operatorName, previousBase, previousTokens, locked, act }: {
+  operatorName: string; previousBase: number | null; previousTokens: number | null; locked: boolean; act: Action;
 }) {
   const [base, setBase] = useState(previousBase === null ? '' : String(previousBase));
   const [tokens, setTokens] = useState('');
@@ -43,16 +44,16 @@ function Opening({ previousBase, previousTokens, locked, act }: {
     if (locked || base === '' || tokens === '') return;
     const values = new FormData(event.currentTarget);
     await act('cash', {
-      cashier: values.get('cashier'), openingBase: Number(base), openingTokens: Number(tokens), note: values.get('note'),
+      openingBase: Number(base), openingTokens: Number(tokens), note: values.get('note'),
     }, 'Turno de caja abierto.');
   }
   return (
     <form onSubmit={save}>
       <h3>Abrir turno</h3>
+      <p>Cajero: <strong>{operatorName}</strong></p>
       {previousBase !== null && <p>Base que dejó el turno anterior: <strong>{money.format(previousBase)}</strong></p>}
       {previousTokens !== null && <p>Fichas contadas al cierre anterior: <strong>{previousTokens}</strong></p>}
       <fieldset className="field-grid" disabled={locked}>
-        <label>Nombre del cajero<input name="cashier" required maxLength={100} /></label>
         <label>Base contada (COP)<input type="number" min={0} max={1_000_000_000} step={1} value={base}
           required onChange={(event) => setBase(event.target.value)} /></label>
         <label>Fichas físicas al abrir<input type="number" min={0} max={1_000_000} step={1} value={tokens}
@@ -336,7 +337,7 @@ function Ledger({ detail }: { detail: Detail }) {
         {!detail.payments.length ? <p>Sin cobros registrados.</p> : <ul className="ledger-list">{detail.payments.map((payment) => (
           <li key={payment.id}>
             <div className="row-between"><strong>{payment.name ?? 'Sin nombre'}</strong>
-              <span>{payment.saleId ? 'Venta #' + payment.saleId : 'Abono #' + payment.id}</span></div>
+              <span>{payment.saleId ? 'Venta #' + payment.saleId : 'Abono #' + payment.id}{payment.voided ? ' · Anulada' : ''}</span></div>
             <time dateTime={payment.createdAt}>{date.format(new Date(payment.createdAt))}</time>
             <p>{[
               payment.cash ? 'Efectivo ' + money.format(payment.cash) : '',
@@ -350,7 +351,7 @@ function Ledger({ detail }: { detail: Detail }) {
   );
 }
 
-export function Cash({ onShiftChange }: { onShiftChange: (open: boolean) => void }) {
+export function Cash({ operatorName, onShiftChange }: { operatorName: string; onShiftChange: (open: boolean) => void }) {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [history, setHistory] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -431,7 +432,7 @@ export function Cash({ onShiftChange }: { onShiftChange: (open: boolean) => void
       {!dashboard && !loadError && <p role="status">Cargando caja…</p>}
       {dashboard && view === 'active' && (dashboard.active ? (
         <ActiveShift key={dashboard.active.shift.id} detail={dashboard.active} locked={locked} act={act} />
-      ) : <Opening previousBase={dashboard.previousBase} previousTokens={dashboard.previousTokens}
+      ) : <Opening operatorName={operatorName} previousBase={dashboard.previousBase} previousTokens={dashboard.previousTokens}
         key={dashboard.recent[0]?.id ?? 'first'} locked={locked} act={act} />)}
       {dashboard && view === 'history' && <>
         {!dashboard.recent.length ? <p>Todavía no hay cierres registrados.</p> : <ul className="account-list">{dashboard.recent.map((item) => (

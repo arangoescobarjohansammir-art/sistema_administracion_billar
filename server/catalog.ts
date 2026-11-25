@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { readJson, sendJson } from './http.js';
 import { findProduct, productSelect, recordInventoryMovement } from './inventory.js';
 import { activeShiftId } from './cash-ledger.js';
+import type { Audit } from './audit.js';
 
 const photoLimit = 2 * 1024 * 1024;
 const nameLimit = 100;
@@ -33,7 +34,7 @@ function parsePhoto(value: unknown) {
   return valid ? { bytes, mime } : null;
 }
 
-export function createCatalog(database: DatabaseSync) {
+export function createCatalog(database: DatabaseSync, audit?: Audit) {
   database.exec([
     'PRAGMA foreign_keys = ON;',
     'CREATE TABLE IF NOT EXISTS products (',
@@ -125,6 +126,7 @@ export function createCatalog(database: DatabaseSync) {
         database.prepare('INSERT INTO cash_inventory_links (inventory_movement_id, cash_movement_id) VALUES (?, ?)')
           .run(movementId, Number(cashMovementId));
       }
+      audit?.record(request, 'inventory_movement', Number(movementId), `${product.name} · ${units > 0 ? '+' : ''}${units} unidades · ${reason}`);
       const updated = findProduct(database, id);
       database.exec('COMMIT');
       committed = true;

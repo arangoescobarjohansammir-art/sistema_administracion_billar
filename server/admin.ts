@@ -32,7 +32,7 @@ export function createAdminSnapshot(database: DatabaseSync, cash: Cash, accounts
   const byDay = new Map(daily.map((item) => [item.day, item]));
   for (const row of database.prepare(`
     SELECT date(created_at, '-5 hours') AS day, COUNT(*) AS transactions, SUM(total) AS amount
-    FROM sales WHERE created_at >= ? GROUP BY day
+    FROM valid_sales WHERE created_at >= ? GROUP BY day
   `).all(start.toISOString())) {
     const target = byDay.get(String(row.day));
     if (target) Object.assign(target, { sales: Number(row.amount), transactions: Number(row.transactions) });
@@ -40,7 +40,7 @@ export function createAdminSnapshot(database: DatabaseSync, cash: Cash, accounts
   for (const row of database.prepare(`
     SELECT date(created_at, '-5 hours') AS day, SUM(cash) AS cash, SUM(transfer) AS transfer,
       SUM(tokens) AS tokens, SUM(tokens * token_value) AS tokenAmount
-    FROM account_payments WHERE created_at >= ? GROUP BY day
+    FROM valid_account_payments WHERE created_at >= ? GROUP BY day
   `).all(start.toISOString())) {
     const target = byDay.get(String(row.day));
     if (target) Object.assign(target, {

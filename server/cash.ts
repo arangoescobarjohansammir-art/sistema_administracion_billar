@@ -5,6 +5,8 @@ import { type createAccounts, record, ValidationError, whole } from './accounts.
 import { activeShiftId } from './cash-ledger.js';
 import { cashReportFilename, renderCashReport } from './cash-report.js';
 import { readJson, sendJson } from './http.js';
+import type { Audit } from './audit.js';
+import { requestOperator } from './operators.js';
 
 type Accounts = ReturnType<typeof createAccounts>;
 const maxCash = 1_000_000_000;
@@ -12,7 +14,7 @@ const maxTokens = 1_000_000;
 const readText = (value: unknown, max: number) =>
   typeof value === 'string' && value.trim().length <= max ? value.trim() : null;
 
-export function createCash(database: DatabaseSync, accounts: Accounts, afterClose?: (shiftId: number) => void) {
+export function createCash(database: DatabaseSync, accounts: Accounts, afterClose?: (shiftId: number) => void, audit?: Audit) {
   database.exec([
     'CREATE TABLE IF NOT EXISTS cash_shifts (',
     '  id INTEGER PRIMARY KEY, cashier TEXT NOT NULL, opened_at TEXT NOT NULL,',
@@ -140,22 +142,22 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
 
   function readPendingBalance() {
     return Number(database.prepare([
-      'SELECT (SELECT COALESCE(SUM(total), 0) FROM sales WHERE account_id IS NOT NULL) -',
-      '(SELECT COALESCE(SUM(cash + transfer + tokens * token_value), 0) FROM account_payments WHERE account_id IS NOT NULL) AS total',
+      'SELECT (SELECT COALESCE(SUM(total), 0) FROM valid_sales WHERE account_id IS NOT NULL) -',
+      '(SELECT COALESCE(SUM(cash + transfer + tokens * token_value), 0) FROM valid_account_payments WHERE account_id IS NOT NULL) AS total',
     ].join(' ')).get()?.total);
   }
 
   function summarize(shift: ReturnType<typeof shiftById>) {
     const id = Number(shift.id);
     const sale = database.prepare([
-      'SELECT COUNT(*) AS count, COALESCE(SUM(sales.total), 0) AS total',
-      'FROM cash_shift_sales JOIN sales ON sales.id = sale_id WHERE shift_id = ?',
+      'SELECT COUNT(*) AS count, COALESCE(SUM(valid_sales.total), 0) AS total',
+      'FROM cash_shift_sales JOIN valid_sales ON valid_sales.id = sale_id WHERE shift_id = ?',
     ].join(' ')).get(id);
     const payment = database.prepare([
       'SELECT COALESCE(SUM(cash), 0) AS cash, COALESCE(SUM(transfer), 0) AS transfer,',
       'COALESCE(SUM(tokens), 0) AS tokens, COALESCE(SUM(tokens * token_value), 0) AS tokenAmount,',
-      'COALESCE(SUM(CASE WHEN account_payments.sale_id IS NULL THEN cash + transfer + tokens * token_value ELSE 0 END), 0) AS accountCollections',
-      'FROM cash_shift_payments JOIN account_payments ON account_payments.id = payment_id WHERE shift_id = ?',
+      'COALESCE(SUM(CASE WHEN valid_account_payments.sale_id IS NULL THEN cash + transfer + tokens * token_value ELSE 0 END), 0) AS accountCollections',
+      'FROM cash_shift_payments JOIN valid_account_payments ON valid_account_payments.id = payment_id WHERE shift_id = ?',
     ].join(' ')).get(id);
     const movement = database.prepare([
       'SELECT COALESCE(SUM(sales_delta), 0) AS sales, COALESCE(SUM(purchases_delta), 0) AS purchases',
@@ -309,7 +311,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     ].join(' ')).all(id);
     const payments = database.prepare([
       'SELECT account_payments.id, sale_id AS saleId, a.name, cash, transfer, tokens, token_value AS tokenValue,',
-      'account_payments.created_at AS createdAt',
+      'account_payments.created_at AS createdAt, (sale_id IN (SELECT sale_id FROM sale_voids)) AS voided',
       'FROM cash_shift_payments JOIN account_payments ON account_payments.id = payment_id',
       'LEFT JOIN customer_accounts a ON a.id = account_payments.account_id WHERE shift_id = ? ORDER BY payment_id DESC',
     ].join(' ')).all(id);
@@ -370,7 +372,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
       if (!input) throw new ValidationError(400, 'No se recibió una operación válida.');
       const { requestId, ...fields } = input;
       let action: () => number;
-      if (path === '/api/cash') action = () => openShift(fields);
+      if (path === '/api/cash') action = () => openShift({ ...fields, cashier: requestOperator(request)?.name ?? fields.cashier });
       else {
         const match = /^\/api\/cash\/([1-9]\d*)\/(movements|count|close|opening-tokens)$/.exec(path);
         if (!match || !whole(Number(match[1]), 1, Number.MAX_SAFE_INTEGER)) throw new ValidationError(404, 'Ruta de caja no encontrada.');
@@ -379,7 +381,12 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
           case 'close': action = () => closeShift(id, fields); break;
           case 'count': action = () => recordCount(id, fields); break;
           case 'opening-tokens': action = () => recordOpeningTokens(id, fields); break;
-          default: action = () => recordMovement(id, fields);
+          default: action = () => {
+            const movementId = recordMovement(id, fields);
+            audit?.record(request, 'cash_movement', movementId,
+              cashMovements[fields.kind as CashMovementKind].label + ' · $' + fields.amount + ' · ' + String(fields.category).trim() + ' · ' + String(fields.reason).trim());
+            return movementId;
+          };
         }
       }
       const result = accounts.writeOnce(requestId, JSON.stringify([path, fields]), action);
@@ -390,5 +397,5 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
       return sendJson(response, error.status, { error: error.message });
     }
   }
-  return { handle, adminOverview };
+  return { handle, adminOverview, shiftTotals: (id: number) => summarize(shiftById(id)) };
 }

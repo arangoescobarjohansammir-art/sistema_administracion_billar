@@ -6,6 +6,9 @@ import { Billiards } from './Billiards';
 import { Tejo } from './Tejo';
 import { Cash } from './Cash';
 import { QuickSale } from './QuickSale';
+import { Access, type CashSession } from './Access';
+import { Staff } from './Staff';
+import type { Operator } from '../shared/operators';
 import { useCajaKeyboard } from './keyboard';
 import './style.css';
 
@@ -13,6 +16,7 @@ type LocalNote = { text: string; updatedAt: string | null };
 
 async function getNote(options?: RequestInit): Promise<LocalNote> {
   const response = await fetch('/api/local-note', options);
+  if (response.status === 401) window.dispatchEvent(new Event('cash-session-required'));
   if (!response.ok) throw new Error('No se pudo completar la operación.');
   return response.json() as Promise<LocalNote>;
 }
@@ -88,6 +92,7 @@ const modules = [
   ['sale', 'Venta'], ['billiards', 'Billar'], ['tejo', 'Tejo'], ['accounts', 'Cuentas'],
   ['catalog', 'Inventario'], ['cash', 'Caja'], ['note', 'Nota de caja'],
 ] as const;
+type Section = typeof modules[number][0] | 'staff';
 
 const localDate = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
 const localClock = new Intl.DateTimeFormat('es-CO', { timeStyle: 'medium', timeZone: 'America/Bogota' });
@@ -103,8 +108,8 @@ function AppClock() {
   </time>;
 }
 
-function App() {
-  const [section, setSection] = useState<typeof modules[number][0] | null>(null);
+function App({ operator, onLogout }: { operator: Operator; onLogout: () => void }) {
+  const [section, setSection] = useState<Section | null>(null);
   const [cashOpen, setCashOpen] = useState<boolean | null>(null);
   const header = useRef<HTMLElement>(null);
   useCajaKeyboard();
@@ -136,11 +141,15 @@ function App() {
             <span className="app-shift" data-open={cashOpen === true}>
               {cashOpen === null ? 'Caja local' : cashOpen ? 'Caja abierta' : 'Caja cerrada'}
             </span>
+            <span className="operator-name" title={operator.name}>{operator.name}</span>
+            <button className="secondary" type="button" onClick={onLogout}>Cerrar sesión</button>
           </div>
         </div>
         <nav className="actions app-nav" data-main-nav aria-label="Secciones de caja">
           {modules.map(([id, name]) => <button key={id} type="button" className="navigation"
             aria-pressed={section === id} onClick={() => setSection(id)}>{name}</button>)}
+          {operator.role === 'admin' && <button type="button" className="navigation" aria-pressed={section === 'staff'}
+            onClick={() => setSection('staff')}>Personal</button>}
         </nav>
       </header>
       <main>
@@ -152,8 +161,9 @@ function App() {
         {section === 'accounts' && <Accounts />}
         {section === 'billiards' && <Billiards />}
         {section === 'tejo' && <Tejo />}
-        {section === 'cash' && <Cash onShiftChange={setCashOpen} />}
+        {section === 'cash' && <Cash operatorName={operator.name} onShiftChange={setCashOpen} />}
         {section === 'note' && <LocalNoteForm />}
+        {section === 'staff' && operator.role === 'admin' && <Staff />}
       </main>
       <footer className="app-keys" aria-label="Atajos de teclado">
         <span><kbd>↑ ↓ ← →</kbd> Moverse</span><span><kbd>Enter</kbd> Elegir</span>
@@ -164,4 +174,48 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+function Root() {
+  const [session, setSession] = useState<CashSession | null>(null);
+  const [error, setError] = useState('');
+  const sessionChannel = useRef<BroadcastChannel | null>(null);
+
+  async function load() {
+    setError('');
+    try { setSession(await api<CashSession>('session')); }
+    catch { setError('No se pudo consultar la sesión. Verifica que la caja local esté iniciada.'); }
+  }
+
+  useEffect(() => {
+    void load();
+    const onExpired = () => setSession({ setupNeeded: false, operator: null });
+    window.addEventListener('cash-session-required', onExpired);
+    const channel = new BroadcastChannel('cash-session');
+    sessionChannel.current = channel;
+    channel.onmessage = () => { void load(); };
+    return () => {
+      window.removeEventListener('cash-session-required', onExpired);
+      channel.close();
+      sessionChannel.current = null;
+    };
+  }, []);
+
+  function changeSession(value: CashSession) {
+    setSession(value);
+    sessionChannel.current?.postMessage(null);
+  }
+
+  async function logOut() {
+    try { changeSession(await api<CashSession>('session/logout', {})); setError(''); }
+    catch { setError('No se pudo cerrar la sesión. Vuelve a intentarlo.'); }
+  }
+
+  if (session?.operator) return <>
+    {error && <p className="cash-error" role="alert">{error}</p>}
+    <App key={session.operator.id} operator={session.operator} onLogout={() => void logOut()} />
+  </>;
+  if (session) return <Access key={String(session.setupNeeded)} session={session} onChange={changeSession} />;
+  return <main>{error ? <p role="alert">{error} <button className="secondary" onClick={() => void load()}>Reintentar</button></p>
+    : <p role="status">Verificando sesión…</p>}</main>;
+}
+
+createRoot(document.getElementById('root')!).render(<Root />);

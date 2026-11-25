@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
 import { activeShiftId } from './cash-ledger.js';
+import type { Audit } from './audit.js';
 
 import { accountTokenValue as tokenValue } from '../shared/tender.js';
 const maxMoney = 1_000_000_000;
@@ -47,7 +48,7 @@ export class ValidationError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
-export function createAccounts(database: DatabaseSync) {
+export function createAccounts(database: DatabaseSync, audit?: Audit) {
   database.exec([
     'CREATE TABLE IF NOT EXISTS customer_accounts (',
     '  id INTEGER PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL',
@@ -77,6 +78,13 @@ export function createAccounts(database: DatabaseSync) {
     'CREATE TABLE IF NOT EXISTS account_operations (',
     '  request_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result_id INTEGER NOT NULL',
     ') STRICT;',
+    'CREATE TABLE IF NOT EXISTS sale_voids (',
+    '  sale_id INTEGER PRIMARY KEY REFERENCES sales(id), created_at TEXT NOT NULL, reason TEXT NOT NULL,',
+    '  stock_returned INTEGER NOT NULL CHECK (stock_returned IN (0, 1))',
+    ') STRICT;',
+    'CREATE VIEW IF NOT EXISTS valid_sales AS SELECT * FROM sales WHERE id NOT IN (SELECT sale_id FROM sale_voids);',
+    'CREATE VIEW IF NOT EXISTS valid_account_payments AS SELECT * FROM account_payments',
+    '  WHERE sale_id IS NULL OR sale_id NOT IN (SELECT sale_id FROM sale_voids);',
     'CREATE INDEX IF NOT EXISTS sales_by_account ON sales(account_id, id);',
     'CREATE INDEX IF NOT EXISTS sales_by_date ON sales(created_at);',
     'CREATE INDEX IF NOT EXISTS items_by_sale ON sale_items(sale_id, id);',
@@ -87,8 +95,8 @@ export function createAccounts(database: DatabaseSync) {
 
   const accountsSelect = [
     'SELECT a.id, a.name, a.created_at AS createdAt,',
-    'COALESCE((SELECT SUM(total) FROM sales WHERE account_id = a.id), 0) -',
-    'COALESCE((SELECT SUM(cash + transfer + tokens * token_value) FROM account_payments WHERE account_id = a.id), 0) AS balance',
+    'COALESCE((SELECT SUM(total) FROM valid_sales WHERE account_id = a.id), 0) -',
+    'COALESCE((SELECT SUM(cash + transfer + tokens * token_value) FROM valid_account_payments WHERE account_id = a.id), 0) AS balance',
     'FROM customer_accounts a',
   ].join(' ');
 
@@ -195,6 +203,7 @@ export function createAccounts(database: DatabaseSync) {
         ).run(saleId, item.productId, item.label, item.quantity, item.unitPrice, movementId);
       }
       if (paid) insertPayment(accountId, saleId, payment, createdAt);
+      audit?.record(request, 'sale', saleId, 'Total: $' + total);
       return saleId;
     });
     return sendJson(response, result.repeated ? 200 : 201, result);
@@ -208,14 +217,16 @@ export function createAccounts(database: DatabaseSync) {
       if (paymentTotal(payment) > Number(accountById(id).balance)) {
         throw new ValidationError(409, 'El abono supera el saldo pendiente.');
       }
-      return insertPayment(id, null, payment, new Date().toISOString());
+      const paymentId = insertPayment(id, null, payment, new Date().toISOString());
+      audit?.record(request, 'account_payment', paymentId, 'Abono por $' + paymentTotal(payment));
+      return paymentId;
     });
     return sendJson(response, result.repeated ? 200 : 201, result);
   }
 
   function getSales(accountId: number | null) {
     const filter = accountId === null ? ' WHERE account_id IS NULL ORDER BY id DESC LIMIT 30' : ' WHERE account_id = ? ORDER BY id DESC';
-    const sales = database.prepare('SELECT id, total, created_at AS createdAt FROM sales' + filter)
+    const sales = database.prepare('SELECT id, total, created_at AS createdAt, (id IN (SELECT sale_id FROM sale_voids)) AS voided FROM sales' + filter)
       .all(...(accountId === null ? [] : [accountId]));
     const items = database.prepare('SELECT label, quantity, unit_price AS unitPrice FROM sale_items WHERE sale_id = ? ORDER BY id');
     const allocations = database.prepare('SELECT label, 1 AS quantity, amount AS unitPrice FROM sale_allocated_lines WHERE sale_id = ? ORDER BY id');
@@ -223,11 +234,13 @@ export function createAccounts(database: DatabaseSync) {
       id: Number(sale.id),
       total: Number(sale.total),
       createdAt: String(sale.createdAt),
+      voided: Boolean(sale.voided),
       items: [...items.all(Number(sale.id)), ...allocations.all(Number(sale.id))],
     }));
   }
 
-  const paymentsSelect = 'SELECT id, sale_id AS saleId, cash, transfer, tokens, token_value AS tokenValue, created_at AS createdAt FROM account_payments';
+  const paymentsSelect = 'SELECT id, sale_id AS saleId, cash, transfer, tokens, token_value AS tokenValue, created_at AS createdAt, ' +
+    '(sale_id IN (SELECT sale_id FROM sale_voids)) AS voided FROM account_payments';
 
   async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     try {

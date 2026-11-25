@@ -13,11 +13,13 @@ export async function testServer(entry = 'dist/server/index.js') {
   const databasePath = join(folder, 'test.sqlite');
   let child;
   let base;
+  let cookie = '';
+  const admin = { name: 'Administrador de prueba', username: 'admin-prueba', secret: 'clave-ficticia-2026' };
 
-  async function start() {
+  async function start({ authenticate = true } = {}) {
     child = spawn(process.execPath, [entry], {
       env: { ...process.env, PORT: '0', CAJA_DB_PATH: databasePath, CAJA_BACKUP_DIR: '',
-        CAJA_SUPABASE_URL: '', CAJA_SUPABASE_SECRET_KEY: '' },
+        CAJA_SUPABASE_URL: '', CAJA_SUPABASE_SECRET_KEY: '', CAJA_SETUP_CODE: '' },
       stdio: ['ignore', 'pipe', 'inherit'],
     });
     const lines = createInterface({ input: child.stdout });
@@ -32,6 +34,12 @@ export async function testServer(entry = 'dist/server/index.js') {
     } finally {
       lines.close();
     }
+    cookie = '';
+    if (authenticate) {
+      const response = await fetchLocal('/api/session');
+      const { setupNeeded } = await response.json();
+      await signIn(setupNeeded ? 'setup' : 'login', admin, setupNeeded ? 201 : 200);
+    }
   }
 
   async function stop() {
@@ -43,9 +51,20 @@ export async function testServer(entry = 'dist/server/index.js') {
   }
 
   function fetchLocal(path, options) {
-    return fetch(base + path, options);
+    const headers = new Headers(options?.headers);
+    if (cookie && !headers.has('Cookie')) headers.set('Cookie', cookie);
+    return fetch(base + path, { ...options, headers });
   }
 
+  async function signIn(action, credentials, status) {
+    const response = await fetchLocal('/api/session/' + action, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(credentials),
+    });
+    const data = await response.json();
+    assert.equal(response.status, status, JSON.stringify(data));
+    cookie = response.headers.get('Set-Cookie')?.split(';')[0] ?? cookie;
+    return data.operator;
+  }
   async function json(path, status, method = 'GET', data) {
     const response = await fetchLocal(path, {
       method,
@@ -58,7 +77,7 @@ export async function testServer(entry = 'dist/server/index.js') {
   }
 
   return {
-    start, stop, fetch: fetchLocal, json, databasePath,
+    start, stop, fetch: fetchLocal, json, databasePath, signIn,
     openShift(openingBase = 100_000, openingTokens = 100) {
       return json('/api/cash', 201, 'POST', {
         requestId: randomUUID(), cashier: 'Cajero de prueba', openingBase, openingTokens, note: '',

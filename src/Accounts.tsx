@@ -3,8 +3,8 @@ import { accountTokenValue as tokenValue } from '../shared/tender';
 
 export type Account = { id: number; name: string; balance: number };
 export type PaymentInput = { cash: number; transfer: number; tokens: number };
-export type Payment = PaymentInput & { id: number; saleId: number | null; tokenValue: number; createdAt: string };
-type Sale = { id: number; total: number; createdAt: string; items: { label: string; quantity: number; unitPrice: number }[] };
+export type Payment = PaymentInput & { id: number; saleId: number | null; tokenValue: number; createdAt: string; voided?: number | null };
+type Sale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number; unitPrice: number }[] };
 type Detail = { account: Account; sales: Sale[]; payments: Payment[] };
 export type Product = { id: number; name: string; brand: string; presentation: string; price: number; active: 0 | 1; stock: number; hasPhoto: 0 | 1 };
 
@@ -24,6 +24,7 @@ export async function api<T>(path: string, data?: object): Promise<T> {
   const restart = 'La pantalla no coincide con el servidor de caja. Detén el servidor anterior y ejecuta npm start.';
   if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(restart);
   const result = await response.json();
+  if (response.status === 401 && result.code === 'CASH_SESSION_REQUIRED') window.dispatchEvent(new Event('cash-session-required'));
   if (response.status === 404 && (result.code === 'API_ROUTE_NOT_FOUND' || result.error === 'Página no encontrada.')) {
     throw new Error(restart);
   }
@@ -145,7 +146,7 @@ function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Acc
         <section><h4>Consumos</h4>
           {!detail.sales.length ? <p>Sin consumos.</p> : <ul className="ledger-list">{detail.sales.map((sale) => (
             <li key={sale.id}>
-              <div className="row-between"><strong>Venta #{sale.id}</strong><strong>{money.format(sale.total)}</strong></div>
+              <div className="row-between"><strong>Venta #{sale.id}{sale.voided ? ' · Anulada' : ''}</strong><strong>{money.format(sale.total)}</strong></div>
               <time dateTime={sale.createdAt}>{date.format(new Date(sale.createdAt))}</time>
               <SaleLines sale={sale} />
             </li>
@@ -154,7 +155,8 @@ function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Acc
         <section><h4>Pagos</h4>
           {!detail.payments.length ? <p>Sin pagos.</p> : <ul className="ledger-list">{detail.payments.map((entry) => (
             <li key={entry.id}>
-              <div className="row-between"><strong>{entry.saleId ? 'Pago de venta #' + entry.saleId : 'Abono #' + entry.id}</strong>
+              <div className="row-between"><strong>{entry.saleId ? 'Pago de venta #' + entry.saleId : 'Abono #' + entry.id}
+                {entry.voided ? ' · Anulado' : ''}</strong>
                 <strong>{money.format(totalPayment(entry, entry.tokenValue))}</strong></div>
               <time dateTime={entry.createdAt}>{date.format(new Date(entry.createdAt))}</time>
               <p><PaymentBreakdown payment={entry} /></p>

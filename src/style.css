@@ -175,6 +175,13 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--ac
 .count-history { margin-block-start: 0.75rem; }
 .count-history summary { cursor: pointer; font-weight: 650; }
 .count-history li p { margin: 0.35rem 0 0.6rem; }
+.access-page { display: grid; place-items: start center; padding-block-start: clamp(2rem, 9vh, 6rem); }
+.access-card { width: min(100%, 39rem); }
+.access-card h1 { margin-block: 0.25rem 1rem; }
+.operator-name { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sale-correction { margin-block-start: 0.75rem; }
+.inline-check { display: flex; align-items: start; gap: 0.55rem; }
+.inline-check input[type="checkbox"] { width: auto; min-height: 0; margin: 0.18rem 0 0; }
 .download-report { display: inline-flex; align-items: center; min-height: 44px; padding: 0.65rem 1rem;
   border-radius: 0.5rem; background: var(--accent); color: var(--on-accent); font-weight: 700; text-decoration: none; }
 .download-report:hover { background: var(--accent-dark); }

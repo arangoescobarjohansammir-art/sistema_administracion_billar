@@ -36,6 +36,7 @@ async function request<T>(path: string, method = 'GET', data?: object): Promise<
     body: data ? JSON.stringify(data) : undefined,
   });
   const result = await response.json();
+  if (response.status === 401 && result.code === 'CASH_SESSION_REQUIRED') window.dispatchEvent(new Event('cash-session-required'));
   if (!response.ok) throw new Error(result.error ?? 'No se pudo completar la operación.');
   return result as T;
 }
