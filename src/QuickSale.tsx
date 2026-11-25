@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { accountTokenValue, cashChange, mixedCreditPlan } from '../shared/tender';
+import { cashChange, mixedCreditPlan } from '../shared/tender';
 import { tejoProductValue } from '../shared/tejo';
 import { CashChangeField } from './CashTools';
 import { AccountPicker } from './CustomerLookup';
@@ -8,7 +8,6 @@ import { api, emptyPayment, label, message, MixedCreditField, money, PaymentBrea
 
 type Item = { product: Product; quantity: number };
 type Mode = 'order' | 'cash' | 'transfer' | 'tokens' | 'mixed' | 'credit';
-type TokenUse = 'products' | 'account';
 type RecentSale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number }[]; payment: Payment | null };
 type RecentRedemption = { id: number; tokens: number; subtotal: number; extra: number; name: string | null;
   createdAt: string; items: { label: string; quantity: number }[] };
@@ -32,7 +31,6 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const [accountId, setAccountId] = useState('');
   const [mixedCredit, setMixedCredit] = useState('');
   const [payment, setPayment] = useState<PaymentInput>(emptyPayment);
-  const [tokenUse, setTokenUse] = useState<TokenUse>('products');
   const [received, setReceived] = useState('');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -65,11 +63,10 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const total = items.reduce((sum, { product, quantity }) => sum + product.price * quantity, 0);
   const showsTokens = mode === 'tokens' || mode === 'mixed';
   const tokens = showsTokens ? payment.tokens : 0;
-  const usesProductRate = mode === 'tokens' || (mode === 'mixed' && tokenUse === 'products');
-  const productRedemption = usesProductRate && tokens > 0;
-  const coveredProducts = productRedemption ? Math.min(total, tokens * tejoProductValue) : 0;
+  const productRedemption = tokens > 0;
+  const coveredProducts = Math.min(total, tokens * tejoProductValue);
   const due = total - coveredProducts;
-  const methods = mode === 'mixed' ? { ...payment, tokens: productRedemption ? 0 : tokens } :
+  const methods = mode === 'mixed' ? { ...payment, tokens: 0 } :
     mode === 'cash' ? { ...emptyPayment, cash: total } : mode === 'transfer' ? { ...emptyPayment, transfer: total } : emptyPayment;
   const cashDue = methods.cash;
   const change = cashChange(cashDue, received);
@@ -82,7 +79,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     (mode !== 'mixed' || mixedCreditPlan(remaining, mixedCredit).valid) &&
     (!accountRequired || Boolean(accountId)) &&
     (mode !== 'tokens' || tokens > 0) && Number.isInteger(tokens) && tokens >= 0 &&
-    (!productRedemption || tokens <= 1000) &&
+    tokens <= 1000 &&
     (cashDue <= 0 || change === null || (Number.isInteger(change) && change >= 0));
   const visible = products.filter((product) => normalize(label(product)).includes(normalize(query.trim())));
 
@@ -144,7 +141,6 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setItems([]);
     setQuery('');
     setPayment(emptyPayment);
-    setTokenUse('products');
     setReceived('');
     setAccountId('');
     setMixedCredit('');
@@ -156,13 +152,11 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setReceived('');
     setError('');
     if (next === 'tokens') {
-      setTokenUse('products');
       requestAnimationFrame(() => checkout.current?.querySelector<HTMLInputElement>('.sale-token-quantity input')?.focus());
     }
   }
 
   function completeWith(method: 'cash' | 'transfer') {
-    setTokenUse('products');
     setMixedCredit('');
     setPayment({ ...emptyPayment, tokens, [method]: due });
     chooseMethod('mixed');
@@ -264,13 +258,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
               {mode !== 'credit' && <div className="payment-options payment-options-four" aria-label="Medio de pago">{paymentOptions.map(({ id, text }) =>
                 <button key={id} type="button" className="secondary" aria-pressed={mode === id} onClick={() => chooseMethod(id)}>{text}</button>)}</div>}
               {showsTokens && <div className="sale-token-quantity">
-                <TokenQuantity count={tokens} rate={usesProductRate ? tejoProductValue : accountTokenValue}
-                  max={usesProductRate ? 1000 : undefined} onChange={(count) => setPayment({ ...payment, tokens: count })} />
-                {mode === 'mixed' && tokens > 0 && <label>Cómo se usan las fichas
-                  <select value={tokenUse} onChange={(event) => setTokenUse(event.target.value === 'account' ? 'account' : 'products')}>
-                    <option value="products">Canje por productos · {money.format(tejoProductValue)} por ficha</option>
-                    <option value="account">Abono a una cuenta · {money.format(accountTokenValue)} por ficha</option>
-                  </select></label>}
+                <TokenQuantity count={tokens} rate={tejoProductValue} max={1000}
+                  onChange={(count) => setPayment({ ...payment, tokens: count })} />
                 {productRedemption && <div className="sale-tender" aria-live="polite">
                   <div className="row-between"><span>Las fichas cubren</span><strong>{money.format(coveredProducts)}</strong></div>
                   <div className="row-between"><span>Queda por pagar</span><strong>{money.format(due)}</strong></div>

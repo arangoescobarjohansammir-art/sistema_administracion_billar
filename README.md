@@ -10,7 +10,7 @@ En **Billar**, abre la mesa, registra los productos entregados y pulsa **Termina
 
 En **Tejo → Canchas y chicos**, elige la cancha e ingresa cuántos jugadores hay. Puedes agregar más jugadores para los próximos chicos. Registra los chicos aunque todavía no sepas quién perdió. Después, en **Asignar chicos perdidos**, escribe cuántos perdió cada persona y el nombre para cargar el importe a su cuenta. Cada jugador puede usar su derecho en una ficha o en productos incluso antes de que se asigne el resultado.
 
-En **Venta → Cobrar → Fichas**, cada ficha cubre hasta $4.000 en productos. Si queda una diferencia, puedes completarla en efectivo, por transferencia o con **Mixto**. En un pago mixto se indica si las fichas se usan en productos ($4.000) o como abono ($3.000). Los abonos en **Cuentas** y los pagos de la cuenta de billar aplican las fichas a $3.000.
+En **Venta → Cobrar**, cada ficha cubre hasta $4.000 en productos tanto en **Fichas** como en **Mixto**. Si queda una diferencia, puedes completarla en efectivo, por transferencia o dejarla fiada a un cliente. Los abonos en **Cuentas** y los pagos de la cuenta de billar aplican las fichas a $3.000.
 
 El encabezado de la app mantiene visible la fecha y la hora de Colombia.
 
