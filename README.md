@@ -34,15 +34,7 @@ Al guardar un cierre, el sistema muestra **Descargar informe PDF**. También pue
 
 ### Inicio automático en el PC de caja con Windows
 
-Con Node.js 22.12 o posterior instalado, abre PowerShell en la carpeta del proyecto con el mismo usuario de Windows que usará la cajera y ejecuta una vez:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\windows-install-cash.ps1
-```
-
-La instalación prepara la aplicación y configura el Programador de tareas para iniciar la caja en segundo plano cada vez que ese usuario entre a Windows. También crea **Caja Patio Bonito** en el escritorio. Para trabajar, basta con abrir ese acceso o visitar <http://127.0.0.1:4173/>. El arranque diario usa los archivos locales ya compilados y funciona sin conexión. Si una caja iniciada manualmente ya está ocupando el puerto, el arranque automático toma el relevo en el próximo inicio de sesión.
-
-Para actualizar la instalación, con el turno cerrado detén la tarea **Caja Patio Bonito** en el Programador de tareas, actualiza los archivos y ejecuta de nuevo el instalador. Los registros del arranque quedan en `data/logs`. Si cambias la carpeta de instalación, quita la tarea anterior antes de instalar desde la nueva ruta.
+Sigue la [guía de activación en el PC de la cajera](docs/activar-caja-windows.md). La preparación se hace una vez y la caja se inicia en segundo plano cada vez que la cajera entra a Windows.
 
 ### Ejecución manual para desarrollo
 
