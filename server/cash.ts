@@ -12,7 +12,7 @@ const maxTokens = 1_000_000;
 const readText = (value: unknown, max: number) =>
   typeof value === 'string' && value.trim().length <= max ? value.trim() : null;
 
-export function createCash(database: DatabaseSync, accounts: Accounts) {
+export function createCash(database: DatabaseSync, accounts: Accounts, afterClose?: (shiftId: number) => void) {
   database.exec([
     'CREATE TABLE IF NOT EXISTS cash_shifts (',
     '  id INTEGER PRIMARY KEY, cashier TEXT NOT NULL, opened_at TEXT NOT NULL,',
@@ -336,7 +336,8 @@ export function createCash(database: DatabaseSync, accounts: Accounts) {
         }
       }
       const result = accounts.writeOnce(requestId, JSON.stringify([path, fields]), action);
-      return sendJson(response, result.repeated ? 200 : 201, result);
+      sendJson(response, result.repeated ? 200 : 201, result);
+      if (path.endsWith('/close') && !result.repeated) afterClose?.(result.id);
     } catch (error) {
       if (!(error instanceof ValidationError)) throw error;
       return sendJson(response, error.status, { error: error.message });

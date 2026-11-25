@@ -43,6 +43,22 @@ Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos 
 
 La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo.
 
+## Copias de seguridad
+
+La caja crea y verifica un respaldo después de cada cierre. Al iniciar y mientras la caja está abierta, también comprueba que exista una copia de las últimas 24 horas que cubra el cierre más reciente. Si falla, registra el motivo en la terminal y reintenta en segundo plano. Los archivos quedan en `data/backups` por defecto y se conservan las copias anteriores.
+
+Para crear un respaldo manual y ensayar una restauración, usa la terminal de VS Code con la aplicación ya compilada:
+
+```sh
+npm run backup -- create
+npm run backup -- verify "data/backups/NOMBRE-DE-LA-COPIA.sqlite"
+npm run backup -- restore "data/backups/NOMBRE-DE-LA-COPIA.sqlite" "data/recuperacion/caja.sqlite"
+```
+
+Usa el nombre que devuelve el comando de respaldo. La restauración exige un archivo de destino nuevo y verifica la copia antes de abrirla. Incluye ventas, cuentas, inventario, cierres y fotos. Guarda una copia también en otro disco para recuperarla si falla el computador. Si deseas guardar los respaldos directamente en otro disco, configura `CAJA_BACKUP_DIR` en `.env` y reinicia la caja.
+
+Cuando necesites continuar la operación con una base recuperada, elige la copia verificada más reciente. Detén la caja, configura `CAJA_DB_PATH=data/recuperacion/caja.sqlite` en `.env` e inicia con `npm start`. Comprueba que aparezca el último turno recuperado. Conserva la base original para poder revisar los movimientos posteriores al respaldo.
+
 ## Panel móvil del administrador
 
 Abre el [panel móvil del club](https://club-tejo-patio-bonito.pages.dev/) o la [demostración con datos ficticios](https://club-tejo-patio-bonito.pages.dev/?demo=1). También puedes abrir [la demo local](http://127.0.0.1:4173/admin/?demo=1) con la caja iniciada. Puedes cambiar de día, abrir un cierre, consultar las mesas y canchas ocupadas y buscar productos.

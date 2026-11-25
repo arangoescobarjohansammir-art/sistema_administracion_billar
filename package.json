@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc --noEmit && vite build --outDir dist/client && npm run build:admin && tsc -p tsconfig.server.json",
     "build:admin": "vite build --config admin/vite.config.mjs",
+    "backup": "node dist/server/backup-command.js",
     "start": "node scripts/start.mjs",
     "test": "npm run build && node --test test/*.test.mjs"
   },

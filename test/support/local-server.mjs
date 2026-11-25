@@ -15,7 +15,8 @@ export async function testServer(entry = 'dist/server/index.js') {
 
   async function start() {
     child = spawn(process.execPath, [entry], {
-      env: { ...process.env, PORT: '0', CAJA_DB_PATH: databasePath },
+      env: { ...process.env, PORT: '0', CAJA_DB_PATH: databasePath, CAJA_BACKUP_DIR: '',
+        CAJA_SUPABASE_URL: '', CAJA_SUPABASE_SECRET_KEY: '' },
       stdio: ['ignore', 'pipe', 'inherit'],
     });
     const lines = createInterface({ input: child.stdout });

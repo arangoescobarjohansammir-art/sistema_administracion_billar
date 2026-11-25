@@ -9,6 +9,7 @@ import { createBilliards } from './billiards.js';
 import { createTejo } from './tejo.js';
 import { createCash } from './cash.js';
 import { startAdminSync } from './admin.js';
+import { createAutomaticBackups } from './backups.js';
 import { readJson, sendJson } from './http.js';
 
 const host = '127.0.0.1';
@@ -19,6 +20,7 @@ const databasePath = process.env.CAJA_DB_PATH ??
 
 mkdirSync(dirname(databasePath), { recursive: true });
 const database = new DatabaseSync(databasePath);
+database.exec('PRAGMA busy_timeout = 5000');
 database.exec(`
   CREATE TABLE IF NOT EXISTS local_note (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -31,7 +33,8 @@ const handleCatalog = createCatalog(database);
 const accounts = createAccounts(database);
 const handleBilliards = createBilliards(database, accounts);
 const handleTejo = createTejo(database, accounts);
-const cash = createCash(database, accounts);
+const cash = createCash(database, accounts, (id) => backups.afterClose(id));
+const backups = createAutomaticBackups(database, databasePath);
 
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -131,4 +134,5 @@ server.listen(port, host, () => {
   const address = server.address();
   if (address && typeof address === 'object') console.log(`Caja local en http://${host}:${address.port}`);
   startAdminSync(database, cash, accounts);
+  backups.start();
 });
