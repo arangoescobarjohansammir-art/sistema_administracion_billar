@@ -5,7 +5,7 @@ import test from 'node:test';
 import { testServer } from './support/local-server.mjs';
 
 test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno', { timeout: 20000 }, async (t) => {
-  const { start, stop, json, fetch, cleanup, openShift } = await testServer();
+  const { start, stop, json, fetch, cleanup, openShift, recordCashCount } = await testServer();
   t.after(cleanup);
   await start();
   const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
@@ -63,10 +63,23 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   assert.equal(open.movements.find((item) => item.id === expense.id).inventoryLinks, 1);
   assert.equal((await json(productMoves, 200))[0].cashMovementId, expense.id);
 
-  const close = { salesCounted: 280_000, purchasesCounted: 120_000, transferConfirmed: 9500, nextBase: 100_000, countedTokens: 101, note: '' };
+  const count = { salesCounted: 280_000, purchasesCounted: 120_000, transferConfirmed: 9500, countedTokens: 101 };
+  await post(shift + '/close', 409, { nextBase: 100_000, note: '' });
+  const initialCount = await recordCashCount(first.id, { ...count, transferConfirmed: 9000 });
+  await post(shift + '/count', 409, { ...count, reason: '', previousCountId: null });
+  await post(shift + '/count', 400, { ...count, reason: '', previousCountId: initialCount.countId });
+  await stop();
+  await start();
+  const reason = 'La cajera verificó otra notificación de transferencia.';
+  const review = await recordCashCount(first.id, count, initialCount.countId, reason);
+  const close = { ...review, nextBase: 100_000, note: '' };
+  await post(shift + '/close', 409, { ...close, countId: initialCount.countId });
   await post(shift + '/close', 400, close);
   await post(shift + '/close', 400, { ...close, nextBase: 280_001 });
   const closing = { ...close, note: 'Queda una transferencia de $500 por verificar.', requestId: randomUUID() };
+  await post(move, 201, movement('sales_in', 1000, 'Aporte para la prueba de recuento'));
+  await post(shift + '/close', 409, closing);
+  await post(move, 201, movement('sales_withdrawal', 1000, 'Devolución del aporte'));
   await post(shift + '/close', 201, closing);
   await post(shift + '/close', 200, closing);
   const closed = await json(shift, 200);
@@ -83,6 +96,7 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   assert.equal(closed.totals.purchasesDifference, 0);
   assert.equal(closed.totals.transferDifference, -500);
   assert.equal(closed.shift.closingNote, closing.note);
+  assert.deepEqual(closed.counts.map(({ transferConfirmed, reason }) => [transferConfirmed, reason]), [[9000, ''], [9500, reason]]);
   assert.equal((await json('/api/cash', 200)).previousBase, 100_000);
   await post(move, 409, { ...purchase, requestId: randomUUID() });
   await json(productMoves, 409, 'POST', receive);
@@ -101,7 +115,7 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
 });
 
 test('conserva un turno abierto de una versión anterior al agregar el conteo de fichas', { timeout: 20000 }, async (t) => {
-  const { start, stop, json, cleanup, openShift, databasePath } = await testServer();
+  const { start, stop, json, cleanup, openShift, databasePath, recordCashCount } = await testServer();
   t.after(cleanup);
   await start();
   const shift = await openShift();
@@ -119,14 +133,13 @@ test('conserva un turno abierto de una versión anterior al agregar el conteo de
   await start();
   const path = '/api/cash/' + shift.id;
   assert.equal((await json(path, 200)).totals.expectedTokens, null);
-  const close = {
-    salesCounted: 100_000, purchasesCounted: 0, transferConfirmed: 0, nextBase: 100_000, countedTokens: 40, note: '',
-  };
-  await json(path + '/close', 409, 'POST', { ...close, requestId: randomUUID() });
+  const count = { salesCounted: 100_000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 40 };
+  await json(path + '/count', 409, 'POST', { ...count, previousCountId: null, reason: '', requestId: randomUUID() });
   const initial = { openingTokens: 40, note: 'Conteo de la libreta de apertura' };
   await json(path + '/opening-tokens', 201, 'POST', { ...initial, requestId: randomUUID() });
   await json(path + '/opening-tokens', 409, 'POST', { ...initial, requestId: randomUUID() });
-  await json(path + '/close', 201, 'POST', { ...close, requestId: randomUUID() });
+  const review = await recordCashCount(shift.id, count);
+  await json(path + '/close', 201, 'POST', { ...review, nextBase: 100_000, note: '', requestId: randomUUID() });
   const result = await json(path, 200);
   assert.equal(result.shift.tokenOpeningNote, initial.note);
   assert.equal(result.totals.expectedTokens, 40);

@@ -6,7 +6,7 @@ import { testServer } from './support/local-server.mjs';
 const noPayment = { cash: 0, transfer: 0, tokens: 0 };
 
 test('separa las canchas y registra cada chico y canje una sola vez', { timeout: 20000 }, async (t) => {
-  const { start, stop, json, cleanup, openShift } = await testServer();
+  const { start, stop, json, cleanup, openShift, recordCashCount } = await testServer();
   t.after(cleanup);
   await start();
   const shift = await openShift();
@@ -94,11 +94,12 @@ test('separa las canchas y registra cada chico y canje una sola vez', { timeout:
   assert.equal(closedLargo.rounds[0].benefits.find((item) => item.accountId === antonio.id).redemption.extra, 2000);
   assert.deepEqual((await json(catalog + '/' + premium.productId + '/movements', 200)).map((row) => row.units), [-1, -1, 5]);
   assert.equal((await json(account, 200)).account.balance, 2000);
-  const close = {
+  const count = {
     salesCounted: cash.salesExpected, purchasesCounted: cash.purchasesExpected,
-    transferConfirmed: cash.transferExpected, nextBase: 100_000, countedTokens: 98, note: '',
+    transferConfirmed: cash.transferExpected, countedTokens: 98,
   };
   const cashPath = '/api/cash/' + shift.id;
+  const close = { ...await recordCashCount(shift.id, count), nextBase: 100_000, note: '' };
   await post(cashPath + '/close', 400, close);
   await post(cashPath + '/close', 201, { ...close, note: 'El conteo físico quedó corto por dos fichas.' });
   const closed = await json(cashPath, 200);

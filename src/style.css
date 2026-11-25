@@ -171,6 +171,10 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--ac
 .redemption-payment { margin: 0.9rem 0; }
 .redemption-payment label { margin-top: 0.55rem; }
 .cash-layout { display: grid; gap: 1.25rem; }
+.cash-close h3[tabindex] { scroll-margin-block-start: calc(var(--header-size, 7.5rem) + 1rem); }
+.count-history { margin-block-start: 0.75rem; }
+.count-history summary { cursor: pointer; font-weight: 650; }
+.count-history li p { margin: 0.35rem 0 0.6rem; }
 .download-report { display: inline-flex; align-items: center; min-height: 44px; padding: 0.65rem 1rem;
   border-radius: 0.5rem; background: var(--accent); color: var(--on-accent); font-weight: 700; text-decoration: none; }
 .download-report:hover { background: var(--accent-dark); }

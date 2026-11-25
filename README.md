@@ -14,7 +14,9 @@ En **Venta → Cobrar → Fichas**, cada ficha cubre hasta $4.000 en productos. 
 
 El encabezado de la app mantiene visible la fecha y la hora de Colombia.
 
-En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, ingresa el conteo de ambos fondos, las transferencias verificadas, las fichas físicas y la base que dejas. El sistema guarda los conteos, las diferencias y cuánto entregas al administrador.
+En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, registra primero ambos fondos, las transferencias verificadas y las fichas físicas. Pulsa **Confirmar conteo y revisar** para revelar los valores esperados y las diferencias. Luego indica la base que dejas y explica cualquier diferencia antes de guardar.
+
+Si necesitas volver a contar, usa **Hacer un recuento** e indica el motivo. El turno y su PDF conservan el primer conteo y los recuentos. Si los movimientos cambian los valores esperados después de revisar, la caja actualiza el cuadre y pide revisarlo antes de guardar.
 
 El cuadre de fichas suma las recibidas por pago y canje, y resta las entregadas en tejo. El próximo turno muestra cuántas se contaron al cierre anterior. Si estás actualizando con un turno abierto, puedes completar su conteo inicial desde **Caja** y registrar de dónde salió ese dato.
 

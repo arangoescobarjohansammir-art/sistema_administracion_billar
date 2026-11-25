@@ -1,10 +1,10 @@
 import PDFDocument from 'pdfkit';
 import type { DatabaseSync } from 'node:sqlite';
-import { cashMovements, type CashMovementKind } from '../shared/cash.js';
+import { cashMovements, type CashMovementKind, type SavedCashCount } from '../shared/cash.js';
 
 type RecordRow = Record<string, unknown>;
 type ReportData = {
-  shift: RecordRow; totals: RecordRow; movements: RecordRow[]; payments: RecordRow[];
+  shift: RecordRow; totals: RecordRow; movements: RecordRow[]; payments: RecordRow[]; counts: SavedCashCount[];
 };
 type Column = { label: string; width: number; right?: boolean };
 type DetailTable = { title: string; columns: Column[]; rows: string[][] };
@@ -261,6 +261,14 @@ export function renderCashReport(database: DatabaseSync, data: ReportData, gener
     if (shift.tokenOpeningNote) notes.push(['Conteo inicial de fichas', text(shift.tokenOpeningNote)]);
     if (shift.closingNote) notes.push(['Cierre', text(shift.closingNote)]);
     if (notes.length) table('Observaciones del turno', [column('Concepto', 145), column('Detalle', 375)], notes);
+    if (data.counts.length) table('Historial de conteos del cierre', [
+      column('Conteo y hora', 130), column('Ventas', 68, true), column('Compras', 68, true),
+      column('Transferencias', 82, true), column('Fichas', 45, true), column('Motivo', 127),
+    ], data.counts.map((entry, index) => [
+      (index === 0 ? 'Conteo inicial' : 'Recuento ' + index) + '\n' + date(entry.createdAt),
+      money(entry.salesCounted), money(entry.purchasesCounted), money(entry.transferConfirmed),
+      count(entry.countedTokens), text(entry.reason || '—'),
+    ]), true);
     for (const { title, columns, rows } of tables) table(title, columns, rows, true);
 
     const pages = doc.bufferedPageRange();

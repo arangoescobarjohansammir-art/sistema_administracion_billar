@@ -44,8 +44,10 @@ test('respalda un cierre y restaura ventas, inventario y fotos en una base nueva
     payment: { cash: 4000, transfer: 0, tokens: 0 },
   });
   const url = '/api/cash/' + opened.id + '/close';
-  const close = { requestId: randomUUID(), salesCounted: 104000, purchasesCounted: 0, transferConfirmed: 0,
-    countedTokens: 100, nextBase: 100000, note: '' };
+  const review = await server.recordCashCount(opened.id, {
+    salesCounted: 104000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 100,
+  });
+  const close = { ...review, requestId: randomUUID(), nextBase: 100000, note: '' };
   await server.json(url, 201, 'POST', close);
   await server.json(url, 200, 'POST', close);
   const snapshot = await awaitCopy(folder, '-turno-' + opened.id + '-');
@@ -59,6 +61,7 @@ test('respalda un cierre y restaura ventas, inventario y fotos en una base nueva
     assert.equal(db.prepare('SELECT SUM(units) AS quantity FROM inventory_movements').get().quantity, 6);
     assert.equal(db.prepare('SELECT hex(substr(photo, 1, 8)) AS png FROM products').get().png, '89504E470D0A1A0A');
     assert.ok(db.prepare('SELECT closed_at FROM cash_shifts').get().closed_at);
+    assert.equal(db.prepare('SELECT sales_counted FROM cash_counts').get().sales_counted, 104000);
   } finally {
     db.close();
   }

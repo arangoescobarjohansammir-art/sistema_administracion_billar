@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { cashMovements, type CashMovementKind } from '../shared/cash';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { cashMovements, expectedCashCounts, type CashMovementKind, type SavedCashCount } from '../shared/cash';
 import { api, message, money, useOperation } from './Accounts';
 import { BillCounter } from './CashTools';
 
@@ -24,7 +24,7 @@ type Payment = {
   id: number; saleId: number | null; name: string | null; cash: number; transfer: number;
   tokens: number; tokenValue: number; createdAt: string;
 };
-type Detail = { shift: Shift; totals: Totals; movements: Movement[]; payments: Payment[] };
+type Detail = { shift: Shift; totals: Totals; movements: Movement[]; payments: Payment[]; counts: SavedCashCount[] };
 type Dashboard = { active: Detail | null; previousBase: number | null; previousTokens: number | null; recent: Shift[] };
 type Action = (path: string, data: object, success: string) => Promise<boolean>;
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
@@ -136,64 +136,132 @@ function Reconciliation({ rows }: { rows: { name: string; expected: number; coun
   );
 }
 
-function CloseForm({ detail, locked, act }: { detail: Detail; locked: boolean; act: Action }) {
+function CountForm({ id, previous, locked, act, cancel }: {
+  id: number; previous?: SavedCashCount; locked: boolean; act: Action; cancel?: () => void;
+}) {
   const [sales, setSales] = useState('');
   const [purchases, setPurchases] = useState('');
   const [transfer, setTransfer] = useState('');
   const [tokens, setTokens] = useState('');
-  const [base, setBase] = useState(String(detail.shift.openingBase));
-  const { shift, totals } = detail;
-  const rows = [
-    { name: 'Caja de ventas', expected: totals.salesExpected, value: sales },
-    { name: 'Fondo para compras', expected: totals.purchasesExpected, value: purchases },
-    { name: 'Transferencias', expected: totals.transferExpected, value: transfer },
-  ].map(({ name, expected, value }) => ({
-    name, expected, counted: value === '' ? null : Number(value), difference: value === '' ? null : Number(value) - expected,
-  }));
-  const tokenDifference = tokens === '' || totals.expectedTokens === null ? null : Number(tokens) - totals.expectedTokens;
-  const mismatch = rows.some((row) => row.difference !== null && row.difference !== 0) ||
-    (tokenDifference !== null && tokenDifference !== 0);
-  const validBase = sales !== '' && base !== '' && Number(base) <= Number(sales);
+  const ready = [sales, purchases, transfer, tokens].every((value) => value !== '');
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (locked || !validBase || tokens === '' || rows.some((row) => row.counted === null)) return;
+    if (locked || !ready) return;
+    const values = new FormData(event.currentTarget);
+    await act('cash/' + id + '/count', {
+      salesCounted: Number(sales), purchasesCounted: Number(purchases), transferConfirmed: Number(transfer),
+      countedTokens: Number(tokens), previousCountId: previous?.id ?? null, reason: values.get('reason') ?? '',
+    }, previous ? 'Nuevo conteo registrado.' : 'Conteo registrado.');
+  }
+
+  return <form className="cash-close" onSubmit={save}>
+    <h3>{previous ? 'Registrar un recuento' : '1. Registrar conteo de cierre'}</h3>
+    <p>{previous ? 'El primer conteo queda guardado. Registra lo que contaste de nuevo y el motivo.'
+      : 'Escribe lo que contaste y verificaste. Al confirmar, verás los valores esperados y las diferencias.'}</p>
+    <fieldset className="field-grid" disabled={locked}>
+      <label>Efectivo contado en ventas (COP)<input type="number" inputMode="numeric" min={0} max={1_000_000_000} step={1} required
+        value={sales} onChange={(event) => setSales(event.target.value)} /></label>
+      <label>Efectivo contado para compras (COP)<input type="number" inputMode="numeric" min={0} max={1_000_000_000} step={1} required
+        value={purchases} onChange={(event) => setPurchases(event.target.value)} /></label>
+      <label>Transferencias verificadas (COP)<input type="number" inputMode="numeric" min={0} max={1_000_000_000} step={1} required
+        value={transfer} onChange={(event) => setTransfer(event.target.value)} /></label>
+      <label>Fichas físicas contadas al cierre<input type="number" inputMode="numeric" min={0} max={1_000_000} step={1} required
+        value={tokens} onChange={(event) => setTokens(event.target.value)} /></label>
+      {previous && <label className="wide">Motivo del recuento<input name="reason" maxLength={300} required /></label>}
+    </fieldset>
+    <BillCounter disabled={locked} targets={[
+      { label: 'Usar para caja de ventas', use: setSales },
+      { label: 'Usar para fondo de compras', use: setPurchases },
+    ]} />
+    <div className="actions">
+      <button disabled={locked || !ready}>{previous ? 'Guardar recuento y revisar' : 'Confirmar conteo y revisar'}</button>
+      {cancel && <button type="button" className="secondary" disabled={locked} onClick={cancel}>Volver a la revisión</button>}
+    </div>
+  </form>;
+}
+
+function CountHistory({ counts }: { counts: SavedCashCount[] }) {
+  return <details className="count-history">
+    <summary>Historial de conteos ({counts.length})</summary>
+    <ol>{counts.map((count, index) => <li key={count.id}>
+      <strong>{index === 0 ? 'Conteo inicial' : 'Recuento ' + index}</strong> · {date.format(new Date(count.createdAt))}
+      <p>Ventas {formatted(count.salesCounted)} · Compras {formatted(count.purchasesCounted)} ·
+        Transferencias {formatted(count.transferConfirmed)} · {tokenCount(count.countedTokens)}</p>
+      {count.reason && <p>Motivo: {count.reason}</p>}
+    </li>)}</ol>
+  </details>;
+}
+
+function ReviewClose({ detail, count, locked, act, recount }: {
+  detail: Detail; count: SavedCashCount; locked: boolean; act: Action; recount: () => void;
+}) {
+  const [base, setBase] = useState(String(detail.shift.openingBase));
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { heading.current?.focus(); }, []);
+  const { shift, totals } = detail;
+  const rows = [
+    { name: 'Caja de ventas', expected: totals.salesExpected, counted: count.salesCounted },
+    { name: 'Fondo para compras', expected: totals.purchasesExpected, counted: count.purchasesCounted },
+    { name: 'Transferencias', expected: totals.transferExpected, counted: count.transferConfirmed },
+  ].map((row) => ({ ...row, difference: row.counted - row.expected }));
+  const tokenDifference = totals.expectedTokens === null ? null : count.countedTokens - totals.expectedTokens;
+  const mismatch = rows.some((row) => row.difference !== 0) || (tokenDifference !== null && tokenDifference !== 0);
+  const validBase = base !== '' && Number(base) <= count.salesCounted;
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (locked || !validBase) return;
     const values = new FormData(event.currentTarget);
     await act('cash/' + shift.id + '/close', {
-      salesCounted: Number(sales), purchasesCounted: Number(purchases), transferConfirmed: Number(transfer),
-      nextBase: Number(base), countedTokens: Number(tokens), note: values.get('note'),
+      countId: count.id, expected: expectedCashCounts(totals), nextBase: Number(base), note: values.get('note'),
     }, 'Cierre y entrega registrados.');
   }
 
-  return (
-    <form onSubmit={save}>
-      <h3>Cuadrar y cerrar turno</h3>
-      <fieldset className="field-grid" disabled={locked}>
-        <label>Efectivo contado en ventas (COP)<input type="number" min={0} max={1_000_000_000} step={1} required
-          value={sales} onChange={(event) => setSales(event.target.value)} /></label>
-        <label>Efectivo contado para compras (COP)<input type="number" min={0} max={1_000_000_000} step={1} required
-          value={purchases} onChange={(event) => setPurchases(event.target.value)} /></label>
-        <label>Transferencias verificadas (COP)<input type="number" min={0} max={1_000_000_000} step={1} required
-          value={transfer} onChange={(event) => setTransfer(event.target.value)} /></label>
-        <label>Base para el próximo turno (COP)<input type="number" min={0} max={1_000_000_000} step={1} required
-          value={base} onChange={(event) => setBase(event.target.value)} /></label>
-        <label>Fichas físicas contadas al cierre<input type="number" min={0} max={1_000_000} step={1} required
-          value={tokens} onChange={(event) => setTokens(event.target.value)} /></label>
-        <label className="wide">{mismatch ? 'Explicación de las diferencias' : 'Nota de cierre (opcional)'}
-          <input name="note" maxLength={300} required={mismatch} /></label>
-      </fieldset>
-      <Reconciliation rows={rows} />
-      <BillCounter disabled={locked} targets={[
-        { label: 'Usar para caja de ventas', use: setSales },
-        { label: 'Usar para fondo de compras', use: setPurchases },
-      ]} />
-      <p>Fichas esperadas: <strong>{totals.expectedTokens ?? '—'}</strong> · Diferencia: <Difference value={tokenDifference} tokens /></p>
-      {!validBase && sales !== '' && base !== '' && <p role="alert">La base siguiente no puede superar el efectivo contado en ventas.</p>}
-      {validBase && purchases !== '' && <p>Entrega al administrador: <strong>{money.format(Number(sales) - Number(base))}</strong> de ventas y{' '}
-        <strong>{money.format(Number(purchases))}</strong> del fondo para compras.</p>}
-      <button disabled={locked || !validBase || tokens === '' || rows.some((row) => row.counted === null)}>Guardar cierre y entrega</button>
-    </form>
-  );
+  return <form className="cash-close" onSubmit={save}>
+    <h3 ref={heading} tabIndex={-1}>2. Revisar y cerrar turno</h3>
+    <Reconciliation rows={rows} />
+    <p>Fichas esperadas: <strong>{totals.expectedTokens ?? '—'}</strong> · Contadas: <strong>{count.countedTokens}</strong> ·{' '}
+      <Difference value={tokenDifference} tokens /></p>
+    <fieldset className="field-grid" disabled={locked}>
+      <label>Base para el próximo turno (COP)<input type="number" inputMode="numeric" min={0} max={1_000_000_000} step={1} required
+        value={base} onChange={(event) => setBase(event.target.value)} /></label>
+      <label>{mismatch ? 'Explicación de las diferencias' : 'Nota de cierre (opcional)'}
+        <input name="note" maxLength={300} required={mismatch} /></label>
+    </fieldset>
+    {base !== '' && !validBase && <p role="alert">La base siguiente no puede superar el efectivo contado en ventas.</p>}
+    {validBase && <p>Entrega al administrador: <strong>{money.format(count.salesCounted - Number(base))}</strong> de ventas y{' '}
+      <strong>{money.format(count.purchasesCounted)}</strong> del fondo para compras.</p>}
+    <div className="actions">
+      <button disabled={locked || !validBase}>Guardar cierre y entrega</button>
+      <button type="button" className="secondary" disabled={locked} onClick={recount}>Hacer un recuento</button>
+    </div>
+    <CountHistory counts={detail.counts} />
+  </form>;
+}
+
+function ActiveShift({ detail, locked, act }: { detail: Detail; locked: boolean; act: Action }) {
+  const [recountFor, setRecountFor] = useState<number | null>(null);
+  const { shift } = detail;
+  const count = detail.counts.at(-1);
+  const recount = count?.id === recountFor;
+  return <div className="cash-layout">
+    <section aria-label="Turno de caja">
+      <h3>Turno #{shift.id} · {shift.cashier}</h3>
+      <span>Abierto {date.format(new Date(shift.openedAt))}</span>
+    </section>
+    {shift.openingTokens === null ? <RecoverOpeningTokens id={shift.id} locked={locked} act={act} />
+      : !count || recount ? <CountForm key={count?.id ?? 'primer-conteo'} id={shift.id} previous={count} locked={locked} act={act}
+        cancel={count && (() => setRecountFor(null))} />
+        : <>
+          <ReviewClose key={count.id} detail={detail} count={count} locked={locked} act={act} recount={() => setRecountFor(count.id)} />
+          <details className="count-history">
+            <summary>Ver movimientos y cobros del turno</summary>
+            <Ledger detail={detail} />
+          </details>
+        </>}
+    <MovementForm id={shift.id} locked={locked} act={act} />
+  </div>;
 }
 
 function ShiftSummary({ detail }: { detail: Detail }) {
@@ -337,6 +405,7 @@ export function Cash({ onShiftChange }: { onShiftChange: (open: boolean) => void
       return true;
     } catch (error) {
       setError(message(error));
+      if (path.endsWith('/count') || path.endsWith('/close')) await load();
       return false;
     } finally {
       setBusy(false);
@@ -361,14 +430,7 @@ export function Cash({ onShiftChange }: { onShiftChange: (open: boolean) => void
       {status && <p role="status">{status}</p>}
       {!dashboard && !loadError && <p role="status">Cargando caja…</p>}
       {dashboard && view === 'active' && (dashboard.active ? (
-        <div className="cash-layout">
-          <ShiftSummary detail={dashboard.active} />
-          <MovementForm id={dashboard.active.shift.id} key={dashboard.active.shift.id} locked={locked} act={act} />
-          <Ledger detail={dashboard.active} />
-          {dashboard.active.shift.openingTokens === null
-            ? <RecoverOpeningTokens id={dashboard.active.shift.id} locked={locked} act={act} />
-            : <CloseForm detail={dashboard.active} key={'close-' + dashboard.active.shift.id} locked={locked} act={act} />}
-        </div>
+        <ActiveShift key={dashboard.active.shift.id} detail={dashboard.active} locked={locked} act={act} />
       ) : <Opening previousBase={dashboard.previousBase} previousTokens={dashboard.previousTokens}
         key={dashboard.recent[0]?.id ?? 'first'} locked={locked} act={act} />)}
       {dashboard && view === 'history' && <>
@@ -377,7 +439,11 @@ export function Cash({ onShiftChange }: { onShiftChange: (open: boolean) => void
             <span>Turno #{item.id} · {item.cashier}</span><span>{date.format(new Date(item.closedAt!))}</span>
           </button></li>
         ))}</ul>}
-        {history && <div className="cash-layout"><ShiftSummary detail={history} /><Ledger detail={history} /></div>}
+        {history && <div className="cash-layout">
+          <ShiftSummary detail={history} />
+          {history.counts.length > 0 && <CountHistory counts={history.counts} />}
+          <Ledger detail={history} />
+        </div>}
       </>}
     </section>
   );

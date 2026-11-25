@@ -9,3 +9,18 @@ export const cashMovements = {
 } as const;
 
 export type CashMovementKind = keyof typeof cashMovements;
+
+export type CashCount = {
+  salesCounted: number; purchasesCounted: number; transferConfirmed: number; countedTokens: number;
+};
+
+export type SavedCashCount = CashCount & { id: number; createdAt: string; reason: string };
+
+export function expectedCashCounts(totals: {
+  salesExpected: number; purchasesExpected: number; transferExpected: number; expectedTokens: number | null;
+}) {
+  return {
+    salesExpected: totals.salesExpected, purchasesExpected: totals.purchasesExpected,
+    transferExpected: totals.transferExpected, expectedTokens: totals.expectedTokens,
+  };
+}

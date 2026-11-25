@@ -6,6 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { expectedCashCounts } from '../../dist/shared/cash.js';
 
 export async function testServer(entry = 'dist/server/index.js') {
   const folder = await mkdtemp(join(tmpdir(), 'tejo-billar-test-'));
@@ -62,6 +63,12 @@ export async function testServer(entry = 'dist/server/index.js') {
       return json('/api/cash', 201, 'POST', {
         requestId: randomUUID(), cashier: 'Cajero de prueba', openingBase, openingTokens, note: '',
       });
+    },
+    async recordCashCount(shiftId, count, previousCountId = null, reason = '') {
+      const path = '/api/cash/' + shiftId;
+      const { id } = await json(path + '/count', 201, 'POST', { ...count, previousCountId, reason, requestId: randomUUID() });
+      const { totals } = await json(path, 200);
+      return { countId: id, expected: expectedCashCounts(totals) };
     },
     async cleanup() {
       await stop();

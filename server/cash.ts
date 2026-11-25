@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
-import { cashMovements, type CashMovementKind } from '../shared/cash.js';
-import { type createAccounts, ValidationError, whole } from './accounts.js';
+import { cashMovements, expectedCashCounts, type CashMovementKind, type SavedCashCount } from '../shared/cash.js';
+import { type createAccounts, record, ValidationError, whole } from './accounts.js';
 import { activeShiftId } from './cash-ledger.js';
 import { cashReportFilename, renderCashReport } from './cash-report.js';
 import { readJson, sendJson } from './http.js';
@@ -24,6 +24,12 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     '  counted_tokens INTEGER CHECK (counted_tokens >= 0), expected_tokens INTEGER, token_opening_note TEXT',
     ') STRICT;',
     'CREATE UNIQUE INDEX IF NOT EXISTS cash_single_open_shift ON cash_shifts((1)) WHERE closed_at IS NULL;',
+    'CREATE TABLE IF NOT EXISTS cash_counts (',
+    '  id INTEGER PRIMARY KEY, shift_id INTEGER NOT NULL REFERENCES cash_shifts(id),',
+    '  sales_counted INTEGER NOT NULL, purchases_counted INTEGER NOT NULL,',
+    '  transfer_confirmed INTEGER NOT NULL, counted_tokens INTEGER NOT NULL, created_at TEXT NOT NULL, reason TEXT NOT NULL',
+    ') STRICT;',
+    'CREATE INDEX IF NOT EXISTS cash_counts_by_shift ON cash_counts(shift_id, id);',
     'CREATE TABLE IF NOT EXISTS cash_movements (',
     '  id INTEGER PRIMARY KEY, shift_id INTEGER NOT NULL REFERENCES cash_shifts(id), kind TEXT NOT NULL,',
     '  amount INTEGER NOT NULL CHECK (amount > 0), sales_delta INTEGER NOT NULL, purchases_delta INTEGER NOT NULL,',
@@ -228,18 +234,58 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     ].join(' ')).run(id, kind, amount, movement.sales * amount, movement.purchases * amount, category, reason, new Date().toISOString()).lastInsertRowid);
   }
 
+  const countRows = database.prepare(`
+    SELECT id, sales_counted AS salesCounted, purchases_counted AS purchasesCounted,
+      transfer_confirmed AS transferConfirmed, counted_tokens AS countedTokens, created_at AS createdAt, reason
+    FROM cash_counts WHERE shift_id = ? ORDER BY id
+  `);
+
+  function readCounts(id: number): SavedCashCount[] {
+    return countRows.all(id).map((row) => ({
+      id: Number(row.id), salesCounted: Number(row.salesCounted), purchasesCounted: Number(row.purchasesCounted),
+      transferConfirmed: Number(row.transferConfirmed), countedTokens: Number(row.countedTokens),
+      createdAt: String(row.createdAt), reason: String(row.reason),
+    }));
+  }
+
+  function recordCount(id: number, input: Record<string, unknown>) {
+    const shift = openById(id);
+    if (shift.openingTokens === null) throw new ValidationError(409, 'Registra primero el conteo inicial de fichas de este turno.');
+    const { salesCounted, purchasesCounted, transferConfirmed, countedTokens, previousCountId } = input;
+    const reason = readText(input.reason, 300);
+    if (!whole(salesCounted, 0, maxCash) || !whole(purchasesCounted, 0, maxCash) ||
+      !whole(transferConfirmed, 0, maxCash) || !whole(countedTokens, 0, maxTokens) || reason === null) {
+      throw new ValidationError(400, 'Registra el efectivo, las transferencias verificadas y las fichas contadas.');
+    }
+    const previous = readCounts(id).at(-1);
+    if (previousCountId !== (previous?.id ?? null)) {
+      throw new ValidationError(409, 'Ya se registró otro conteo. Revisa el conteo guardado.');
+    }
+    if (previous && !reason) throw new ValidationError(400, 'Explica por qué hiciste un nuevo conteo.');
+    return Number(database.prepare(`
+      INSERT INTO cash_counts (shift_id, sales_counted, purchases_counted, transfer_confirmed, counted_tokens, created_at, reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, salesCounted, purchasesCounted, transferConfirmed, countedTokens, new Date().toISOString(), reason).lastInsertRowid);
+  }
+
   function closeShift(id: number, input: Record<string, unknown>) {
     const shift = openById(id);
-    const { salesCounted, purchasesCounted, transferConfirmed, nextBase, countedTokens } = input;
+    const count = readCounts(id).at(-1);
+    if (!count) throw new ValidationError(409, 'Confirma el conteo antes de cerrar el turno.');
+    if (input.countId !== count.id) throw new ValidationError(409, 'Hay un conteo más reciente. Revisa el cuadre antes de cerrar.');
+    const { salesCounted, purchasesCounted, transferConfirmed, countedTokens } = count;
+    const { nextBase } = input;
     const note = readText(input.note, 300);
-    if (!whole(salesCounted, 0, maxCash) || !whole(purchasesCounted, 0, maxCash) ||
-      !whole(transferConfirmed, 0, maxCash) || !whole(nextBase, 0, maxCash) ||
-      !whole(countedTokens, 0, maxTokens) || note === null) {
-      throw new ValidationError(400, 'Registra el efectivo y las fichas contadas, las transferencias verificadas y la base siguiente.');
+    if (!whole(nextBase, 0, maxCash) || note === null) {
+      throw new ValidationError(400, 'Registra la base siguiente y revisa la nota de cierre.');
     }
     if (nextBase > salesCounted) throw new ValidationError(400, 'La base siguiente no puede superar el efectivo contado en ventas.');
     const totals = summarize(shift);
     if (totals.expectedTokens === null) throw new ValidationError(409, 'Registra primero el conteo inicial de fichas de este turno.');
+    const expected = record(input.expected);
+    if (!Object.entries(expectedCashCounts(totals)).every(([key, value]) => expected?.[key] === value)) {
+      throw new ValidationError(409, 'Hubo movimientos desde la revisión. Revisa las diferencias actualizadas antes de cerrar.');
+    }
     if (!note && (salesCounted !== totals.salesExpected || purchasesCounted !== totals.purchasesExpected ||
       transferConfirmed !== totals.transferExpected || countedTokens !== totals.expectedTokens)) {
       throw new ValidationError(400, 'Explica las diferencias antes de cerrar el turno.');
@@ -267,7 +313,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
       'FROM cash_shift_payments JOIN account_payments ON account_payments.id = payment_id',
       'LEFT JOIN customer_accounts a ON a.id = account_payments.account_id WHERE shift_id = ? ORDER BY payment_id DESC',
     ].join(' ')).all(id);
-    return { shift, totals: summarize(shift), movements, payments };
+    return { shift, totals: summarize(shift), movements, payments, counts: readCounts(id) };
   }
 
   function adminOverview() {
@@ -326,11 +372,12 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
       let action: () => number;
       if (path === '/api/cash') action = () => openShift(fields);
       else {
-        const match = /^\/api\/cash\/([1-9]\d*)\/(movements|close|opening-tokens)$/.exec(path);
+        const match = /^\/api\/cash\/([1-9]\d*)\/(movements|count|close|opening-tokens)$/.exec(path);
         if (!match || !whole(Number(match[1]), 1, Number.MAX_SAFE_INTEGER)) throw new ValidationError(404, 'Ruta de caja no encontrada.');
         const id = Number(match[1]);
         switch (match[2]) {
           case 'close': action = () => closeShift(id, fields); break;
+          case 'count': action = () => recordCount(id, fields); break;
           case 'opening-tokens': action = () => recordOpeningTokens(id, fields); break;
           default: action = () => recordMovement(id, fields);
         }
