@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { accountTokenValue, cashChange } from '../shared/tender';
 import { CashChangeField } from './CashTools';
+import { AccountPicker } from './CustomerLookup';
 import { billiardTables, durationLabel, elapsedSeconds, timeCharge } from '../shared/billiard';
 import { api, emptyPayment, label, message, money, PaymentFields, TokenQuantity, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
@@ -87,10 +88,8 @@ function BillSplit({ session, accounts, locked, onClose }: {
           {parts.map((part, index) => (
             <fieldset className="bill-part" key={part.key}>
               <legend>Persona {index + 1} · {money.format(totals[index])}</legend>
-              <label>Cuenta<select value={part.account} onChange={(event) => updatePart(part.key, { account: event.target.value })}>
-                <option value="">Sin nombre · pago completo</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-              </select></label>
+              <AccountPicker accounts={accounts} label="Cuenta del cliente" value={part.account}
+                onChange={(account) => updatePart(part.key, { account })} />
               <div className="field-grid">
                 {lines.map((line, lineIndex) => line.total > 0 && (
                   <label key={lineIndex}>{line.name} <span>({money.format(line.total)})</span>
@@ -204,11 +203,10 @@ function TablePayment({ session, accounts, locked, onClose }: {
             }}>Completar en efectivo</button>
           </div>}
         </div>}
-        <label className="space-above">Cuenta del cliente{balance === 0 ? ' (opcional)' : ''}<select value={owner}
-          required={balance > 0} onChange={(event) => setOwner(event.target.value)}>
-          <option value="">Seleccionar cuenta</option>
-          {accounts.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
-        </select></label>
+        <div className="space-above">
+          <AccountPicker accounts={accounts} label={'Cuenta del cliente' + (balance === 0 ? ' (opcional)' : '')}
+            value={owner} required={balance > 0} onChange={setOwner} />
+        </div>
         {method === 'mixed' && <PaymentFields value={payment} onChange={setPayment} />}
         {charge.cash > 0 && <CashChangeField due={charge.cash} received={received} onChange={setReceived} />}
         {balance < 0 && <p role="alert">El pago supera el total de la mesa.</p>}

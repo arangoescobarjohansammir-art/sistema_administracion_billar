@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { accountTokenValue, cashChange } from '../shared/tender';
 import { tejoProductValue } from '../shared/tejo';
 import { CashChangeField } from './CashTools';
+import { AccountPicker } from './CustomerLookup';
 import { api, emptyPayment, label, message, money, PaymentBreakdown, PaymentFields, TokenQuantity, totalPayment, useOperation,
   type Account, type Payment, type PaymentInput, type Product } from './Accounts';
 
@@ -109,7 +110,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     setError('');
     setMode(next);
     requestAnimationFrame(() => {
-      checkout.current?.querySelector<HTMLElement>(next === 'credit' ? 'select' : '[data-confirm-sale]')?.focus();
+      checkout.current?.querySelector<HTMLElement>(next === 'credit' ? '[data-customer-lookup]' : '[data-confirm-sale]')?.focus();
     });
   }
 
@@ -276,11 +277,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
                   <button className="secondary" type="button" onClick={() => chooseMethod('mixed')}>Dividir el resto</button>
                 </div>}
               </div>}
-              <label>Cuenta del cliente {mode === 'mixed' ? '(opcional si pagas todo)' : mode !== 'credit' ? '(opcional)' : ''}
-                <select value={accountId} required={mode === 'credit'} onChange={(event) => setAccountId(event.target.value)}>
-                  <option value="">{mode === 'credit' ? 'Selecciona el nombre' : 'Sin nombre · pago completo'}</option>
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                </select></label>
+              <AccountPicker accounts={accounts} value={accountId} required={mode === 'credit'} onChange={setAccountId}
+                label={'Cuenta del cliente' + (mode === 'mixed' ? ' (opcional si pagas todo)' : mode !== 'credit' ? ' (opcional)' : '')} />
               {mode === 'mixed' && <PaymentFields value={payment} onChange={setPayment} showTokens={false} />}
               {cashDue > 0 && <CashChangeField due={cashDue} received={received} onChange={setReceived} />}
               {mode === 'credit' && !accounts.length && <p>Crea una cuenta en el módulo Cuentas.</p>}

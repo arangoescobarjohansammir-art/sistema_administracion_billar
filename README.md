@@ -57,6 +57,8 @@ Puedes escribir la cantidad del producto directamente en la cuenta. Al cobrar en
 
 Para probar el fiado, crea una cuenta en **Cuentas**, luego abre **Venta** y agrega cuatro cervezas de $4.000. En **Cobrar → Mixto**, selecciona la cuenta y registra $6.000 en efectivo. Deben quedar $10.000 pendientes y salir cuatro unidades. Registra después un abono de $7.000 en efectivo y una ficha. El saldo queda en cero sin otra salida de inventario.
 
+En **Venta**, **Billar** y **Tejo**, escribe parte del nombre o apodo en el campo de cliente. Las sugerencias aparecen desde la primera letra, incluso si no escribes las tildes. Puedes elegir con el mouse o con **↓** y **Enter**.
+
 Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, las cuentas de billar y tejo, el cierre de caja y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.
 
 La base se crea en `data/caja.sqlite` e incluye las fotos del catálogo.

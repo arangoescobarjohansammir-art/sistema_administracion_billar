@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { cashChange } from '../shared/tender';
 import { CashChangeField } from './CashTools';
+import { AccountPicker, CustomerLookup } from './CustomerLookup';
 import { courtLabel, tejoCourtsPerType, tejoProductValue, tejoTypes, type TejoType } from '../shared/tejo';
 import { api, emptyPayment, label, message, money, PaymentFields, totalPayment, useOperation,
   type Account, type PaymentInput, type Product } from './Accounts';
@@ -77,16 +78,16 @@ function RecordChicos({ group, accounts, locked, act, availableTokens }: {
     </div>
     {pending.length > 0 && <form onSubmit={save}>
       <div className="section-title"><h4>Asignar chicos perdidos</h4><strong>{pending.length} por asignar</strong></div>
-      <datalist id={'tejo-customer-names-' + group.id}>{accounts.map((account) => <option key={account.id} value={account.name} />)}</datalist>
       <fieldset className="plain-fieldset" disabled={locked}>
         {group.players.map((player) => {
           const eligible = pending.filter((round) => round.benefits.some((benefit) => benefit.accountId === player.id)).length;
           return eligible > 0 && <div className="field-grid" key={player.id}>
             <label>{player.name} · chicos perdidos<input type="number" min={0} max={eligible} step={1} inputMode="numeric" placeholder="0"
               value={counts[player.id] ?? ''} onChange={(event) => setCounts((previous) => ({ ...previous, [player.id]: event.target.value }))} /></label>
-            {player.accountId === null && Number(counts[player.id]) > 0 && <label>Nombre de {player.name.toLowerCase()}
-              <input required maxLength={100} list={'tejo-customer-names-' + group.id} value={names[player.id] ?? ''}
-                onChange={(event) => setNames((previous) => ({ ...previous, [player.id]: event.target.value }))} /></label>}
+            {player.accountId === null && Number(counts[player.id]) > 0 && <CustomerLookup accounts={accounts}
+              label={'Nombre de ' + player.name.toLowerCase()} text={names[player.id] ?? ''} required
+              onTextChange={(name) => setNames((previous) => ({ ...previous, [player.id]: name }))}
+              onChoose={({ name }) => setNames((previous) => ({ ...previous, [player.id]: name }))} />}
           </div>;
         })}
         {total > pending.length && <p role="alert">Solo quedan {pending.length} chicos por asignar.</p>}
@@ -245,10 +246,8 @@ function RedeemForm({ entry, accounts, products, locked, act, onCancel }: {
             {methods.cash > 0 && <CashChangeField due={methods.cash} received={received} onChange={setReceived} />}
             {remaining < 0 && <p role="alert">El pago supera lo que falta por cobrar.</p>}
             {needsAccount && (knownPlayer ? <p>Queda fiado a {entry.player.name}: <strong>{money.format(remaining)}</strong></p>
-              : <label>Cuenta para anotar {money.format(remaining)}<select required value={payee} onChange={(event) => setPayee(event.target.value)}>
-                <option value="">Seleccionar cliente</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-              </select></label>)}
+              : <AccountPicker accounts={accounts} label={'Cuenta para anotar ' + money.format(remaining)} required
+                value={payee} onChange={setPayee} />)}
           </div>}
           <div className="actions">
             <button disabled={!ready}>Confirmar consumo y entrega</button>
