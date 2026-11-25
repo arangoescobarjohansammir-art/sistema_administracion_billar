@@ -1,14 +1,7 @@
-name: Publicar panel móvil
+name: Publicar demo móvil
 
 on:
   workflow_dispatch:
-    inputs:
-      supabase_url:
-        description: URL pública de Supabase (opcional para la demo)
-        type: string
-      supabase_publishable_key:
-        description: Clave sb_publishable_ (opcional para la demo)
-        type: string
 
 permissions:
   contents: read
@@ -29,9 +22,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build:admin
-        env:
-          VITE_SUPABASE_URL: ${{ inputs.supabase_url }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ inputs.supabase_publishable_key }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist/admin

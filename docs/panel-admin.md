@@ -35,7 +35,9 @@ npm run build:admin
 
 Publica únicamente el contenido de `dist/admin` en un alojamiento web estático con HTTPS. Abre el enlace del alojamiento en el celular e inicia sesión con la cuenta autorizada. Comprueba que aparezca la última sincronización y una operación que también veas en la caja.
 
-Para publicar en GitHub Pages, abre **Settings → Pages** en el repositorio y elige **GitHub Actions** como origen. Luego abre **Actions → Publicar panel móvil → Run workflow** en la rama `main`. Ingresa solo la URL y la clave publicable. Puedes dejar los dos campos vacíos para publicar la demo. [Configurar GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
+Para publicar la pantalla en Cloudflare, sube la carpeta `dist/admin` o un ZIP con su contenido a **Cloudflare Drop** y reclama la publicación desde tu cuenta para conservar el enlace. Los datos y el inicio de sesión se gestionan en Supabase. [Publicación con Cloudflare Drop](https://developers.cloudflare.com/changelog/post/2026-07-08-cloudflare-drag-and-drop/).
+
+Para publicar la demo en GitHub Pages, abre **Settings → Pages** en un repositorio donde esté disponible y elige **GitHub Actions** como origen. Luego abre **Actions → Publicar demo móvil → Run workflow** en `main`. [Configurar GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
 El sitio se puede abrir desde cualquier red con internet. Si el computador se apaga o pierde conexión, el panel conserva en Supabase la última copia disponible con su fecha y hora. La caja se ejecuta en el computador del local y sigue siendo la fuente de los datos.
 
