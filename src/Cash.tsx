@@ -9,6 +9,7 @@ type Shift = {
   closedAt: string | null; salesCounted: number | null; purchasesCounted: number | null; transferConfirmed: number | null;
   nextBase: number | null; closingNote: string | null;
   openingTokens: number | null; previousTokens: number | null; countedTokens: number | null; tokenOpeningNote: string | null;
+  reconciliationRevision: number;
 };
 type Totals = {
   salesCount: number; salesTotal: number; cashReceived: number; transferExpected: number;
@@ -27,7 +28,7 @@ type Payment = {
   tokens: number; tokenValue: number; createdAt: string;
   voided: number | null; voidReason: string | null;
 };
-type Detail = { shift: Shift; totals: Totals; movements: Movement[]; payments: Payment[]; counts: SavedCashCount[] };
+type Detail = { shift: Shift; totals: Totals; movements: Movement[]; payments: Payment[]; counts: SavedCashCount[]; requiresRecount: boolean };
 type Dashboard = { active: Detail | null; previousBase: number | null; previousTokens: number | null; recent: Shift[] };
 type Action = (path: string, data: object, success: string) => Promise<boolean>;
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
@@ -198,8 +199,8 @@ function Reconciliation({ rows }: { rows: { name: string; expected: number; coun
   );
 }
 
-function CountForm({ id, previous, locked, act, cancel }: {
-  id: number; previous?: SavedCashCount; locked: boolean; act: Action; cancel?: () => void;
+function CountForm({ id, reconciliationRevision, previous, locked, act, cancel }: {
+  id: number; reconciliationRevision: number; previous?: SavedCashCount; locked: boolean; act: Action; cancel?: () => void;
 }) {
   const [sales, setSales] = useState('');
   const [purchases, setPurchases] = useState('');
@@ -214,6 +215,7 @@ function CountForm({ id, previous, locked, act, cancel }: {
     await act('cash/' + id + '/count', {
       salesCounted: Number(sales), purchasesCounted: Number(purchases), transferConfirmed: Number(transfer),
       countedTokens: Number(tokens), previousCountId: previous?.id ?? null, reason: values.get('reason') ?? '',
+      reconciliationRevision,
     }, previous ? 'Nuevo conteo registrado.' : 'Conteo registrado.');
   }
 
@@ -313,9 +315,16 @@ function ActiveShift({ detail, admin, locked, act, refresh }: { detail: Detail; 
       <span>Abierto {date.format(new Date(shift.openedAt))}</span>
     </section>
     <PurchaseFund id={shift.id} expected={detail.totals.purchasesExpected} admin={admin} locked={locked} act={act} />
+    {detail.requiresRecount && <p className="cash-error" role="status">
+      El conteo anterior quedó desactualizado. Vuelve a contar el efectivo y las fichas y verifica las transferencias.
+    </p>}
     {shift.openingTokens === null ? <RecoverOpeningTokens id={shift.id} locked={locked} act={act} />
-      : !count || recount ? <CountForm key={count?.id ?? 'primer-conteo'} id={shift.id} previous={count} locked={locked} act={act}
-        cancel={count && (() => setRecountFor(null))} />
+      : !count || recount || detail.requiresRecount ? <>
+        <CountForm key={(count?.id ?? 'primer-conteo') + ':' + shift.reconciliationRevision} id={shift.id}
+          reconciliationRevision={shift.reconciliationRevision} previous={count} locked={locked} act={act}
+          cancel={count && !detail.requiresRecount ? () => setRecountFor(null) : undefined} />
+        {count && <CountHistory counts={detail.counts} />}
+      </>
         : <ReviewClose key={count.id} detail={detail} count={count} locked={locked} act={act} recount={() => setRecountFor(count.id)} />}
     <MovementForm id={shift.id} locked={locked} act={act} />
     <details className="count-history" onToggle={(event) => { if (event.currentTarget.open) refresh(); }}>

@@ -86,7 +86,8 @@ export async function testServer(entry = 'dist/server/index.js') {
     },
     async recordCashCount(shiftId, count, previousCountId = null, reason = '') {
       const path = '/api/cash/' + shiftId;
-      const { id } = await json(path + '/count', 201, 'POST', { ...count, previousCountId, reason, requestId: randomUUID() });
+      const { shift: { reconciliationRevision } } = await json(path, 200);
+      const { id } = await json(path + '/count', 201, 'POST', { ...count, previousCountId, reason, reconciliationRevision, requestId: randomUUID() });
       const { totals } = await json(path, 200);
       return { countId: id, expected: expectedCashCounts(totals) };
     },

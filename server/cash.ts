@@ -4,6 +4,7 @@ import { cashMovements, expectedCashCounts, purchaseFundingCategory, type CashMo
 import type { PurchaseFunding } from '../shared/admin.js';
 import { type createAccounts, record, ValidationError, whole } from './accounts.js';
 import { activeShiftId, shiftTokenTotals } from './cash-ledger.js';
+import { installCashReconciliation } from './cash-reconciliation.js';
 import { cashReportFilename, renderCashReport } from './cash-report.js';
 import { readJson, sendJson } from './http.js';
 import type { Audit } from './audit.js';
@@ -99,6 +100,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
   for (const [column, definition] of Object.entries(tokenColumns)) {
     if (!existingColumns.has(column)) database.exec('ALTER TABLE cash_shifts ADD COLUMN ' + column + ' ' + definition);
   }
+  installCashReconciliation(database);
 
   const shiftSelect = [
     'SELECT id, cashier, opened_at AS openedAt, opening_base AS openingBase, previous_base AS previousBase,',
@@ -107,7 +109,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     'closing_note AS closingNote, sales_expected AS salesExpected, purchases_expected AS purchasesExpected,',
     'transfer_expected AS transferExpected, pending_balance AS pendingBalance, opening_tokens AS openingTokens,',
     'previous_tokens AS previousTokens, counted_tokens AS countedTokens, expected_tokens AS expectedTokens,',
-    'token_opening_note AS tokenOpeningNote FROM cash_shifts',
+    'token_opening_note AS tokenOpeningNote, reconciliation_revision AS reconciliationRevision FROM cash_shifts',
   ].join(' ');
 
   function previousClose() {
@@ -249,15 +251,17 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
 
   const countRows = database.prepare(`
     SELECT id, sales_counted AS salesCounted, purchases_counted AS purchasesCounted,
-      transfer_confirmed AS transferConfirmed, counted_tokens AS countedTokens, created_at AS createdAt, reason
+      transfer_confirmed AS transferConfirmed, counted_tokens AS countedTokens, created_at AS createdAt, reason,
+      reconciliation_revision AS reconciliationRevision
     FROM cash_counts WHERE shift_id = ? ORDER BY id
   `);
 
-  function readCounts(id: number): SavedCashCount[] {
+  function readCounts(id: number): (SavedCashCount & { reconciliationRevision: number | null })[] {
     return countRows.all(id).map((row) => ({
       id: Number(row.id), salesCounted: Number(row.salesCounted), purchasesCounted: Number(row.purchasesCounted),
       transferConfirmed: Number(row.transferConfirmed), countedTokens: Number(row.countedTokens),
       createdAt: String(row.createdAt), reason: String(row.reason),
+      reconciliationRevision: row.reconciliationRevision === null ? null : Number(row.reconciliationRevision),
     }));
   }
 
@@ -275,10 +279,15 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
       throw new ValidationError(409, 'Ya se registró otro conteo. Revisa el conteo guardado.');
     }
     if (previous && !reason) throw new ValidationError(400, 'Explica por qué hiciste un nuevo conteo.');
+    if (input.reconciliationRevision !== shift.reconciliationRevision) {
+      throw new ValidationError(409, 'Hubo movimientos mientras registrabas el conteo. Vuelve a contar y verificar la caja.');
+    }
     return Number(database.prepare(`
-      INSERT INTO cash_counts (shift_id, sales_counted, purchases_counted, transfer_confirmed, counted_tokens, created_at, reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, salesCounted, purchasesCounted, transferConfirmed, countedTokens, new Date().toISOString(), reason).lastInsertRowid);
+      INSERT INTO cash_counts (shift_id, sales_counted, purchases_counted, transfer_confirmed, counted_tokens,
+        created_at, reason, reconciliation_revision)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, salesCounted, purchasesCounted, transferConfirmed, countedTokens, new Date().toISOString(), reason,
+      Number(shift.reconciliationRevision)).lastInsertRowid);
   }
 
   function closeShift(id: number, input: Record<string, unknown>) {
@@ -286,6 +295,9 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     const count = readCounts(id).at(-1);
     if (!count) throw new ValidationError(409, 'Confirma el conteo antes de cerrar el turno.');
     if (input.countId !== count.id) throw new ValidationError(409, 'Hay un conteo más reciente. Revisa el cuadre antes de cerrar.');
+    if (count.reconciliationRevision !== shift.reconciliationRevision) {
+      throw new ValidationError(409, 'El conteo quedó desactualizado. Guarda un recuento antes de cerrar el turno.');
+    }
     const { salesCounted, purchasesCounted, transferConfirmed, countedTokens } = count;
     const { nextBase } = input;
     const note = readText(input.note, 300);
@@ -330,7 +342,11 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
       'LEFT JOIN account_payment_voids reversal ON reversal.payment_id = account_payments.id',
       'LEFT JOIN customer_accounts a ON a.id = account_payments.account_id WHERE shift_id = ? ORDER BY cash_shift_payments.payment_id DESC',
     ].join(' ')).all(id);
-    return { shift, totals: summarize(shift), movements, payments, counts: readCounts(id) };
+    const counts = readCounts(id);
+    const latest = counts.at(-1);
+    const requiresRecount = shift.closedAt === null && latest !== undefined &&
+      latest.reconciliationRevision !== shift.reconciliationRevision;
+    return { shift, totals: summarize(shift), movements, payments, counts, requiresRecount };
   }
 
   function adminOverview() {
