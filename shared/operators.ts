@@ -3,6 +3,7 @@ export type Operator = { id: number; name: string; username: string; role: 'admi
 export const auditLabels = {
   sale: 'Venta de productos',
   sale_void: 'Anulación de venta',
+  redemption_void: 'Anulación de canje',
   account_payment: 'Abono de cliente',
   account_payment_void: 'Anulación de abono',
   tejo_charge_move: 'Cambio de cuenta de un chico',

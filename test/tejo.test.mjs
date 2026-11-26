@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { testServer } from './support/local-server.mjs';
 
@@ -309,6 +310,77 @@ test('distingue diez fichas de canje por productos de las fichas de abono', { ti
   assert.equal(totals.tokensRedeemed, 10);
   assert.equal(totals.tokensReceived, 10);
   assert.equal(totals.cashReceived, 20000);
+});
+
+test('limita fichas completas y permite anular canjes del turno con su inventario y excedente', { timeout: 20000 }, async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  const { id: shiftId } = await server.openShift();
+  const { json } = server;
+  const post = (path, status, fields) => json(path, status, 'POST', { requestId: randomUUID(), ...fields });
+  const path = '/api/tejo/redemptions';
+  const corrections = '/api/corrections/redemptions';
+  async function product(name, price) {
+    const { id } = await post('/api/products', 201, { name, price, brand: '', presentation: 'Unidad',
+      packageName: '', unitsPerPackage: 1, active: true });
+    await post('/api/products/' + id + '/movements', 201, { direction: 'in', unit: 'unit', quantity: 2, reason: 'Prueba' });
+    return { productId: id, quantity: 1, unitPrice: price };
+  }
+  const beer = await product('Cerveza ficticia', 4000);
+  const snack = await product('Mecato ficticio', 3000);
+  const bottle = await product('Botella ficticia', 60000);
+  const sale = (tokens, item) => ({ accountId: null, tokens, items: [item], payment: noPayment });
+  await post(path, 400, sale(10, beer));
+  await post(path, 400, sale(2, snack));
+  const closePath = '/api/cash/' + shiftId;
+  assert.equal((await json(closePath, 200)).totals.expectedTokens, 100);
+
+  const old = await post(path, 201, sale(1, beer));
+  await server.stop();
+  const previous = new DatabaseSync(server.databasePath);
+  try {
+    previous.prepare('UPDATE tejo_redemptions SET tokens = 10, allowance = 40000 WHERE id = ?').run(old.id);
+  } finally { previous.close(); }
+  await server.start();
+  const existing = (await json(corrections, 200)).redemptions[0];
+  assert.deepEqual([existing.id, existing.saleId, existing.redemptionTokens], [old.id, null, 10]);
+  const count = await server.recordCashCount(shiftId, { salesCounted: 100000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 101 });
+  const reversal = { requestId: randomUUID(), reason: 'Diez digitadas por error', stockReturned: true, confirmed: true };
+  const oldVoid = corrections + '/' + old.id + '/void';
+  await post(oldVoid, 201, reversal);
+  await post(oldVoid, 200, reversal);
+  await post(oldVoid, 409, { ...reversal, requestId: randomUUID() });
+  const corrected = await json(closePath, 200);
+  assert.equal(corrected.requiresRecount, true);
+  assert.equal(corrected.totals.expectedTokens, 100);
+
+  const partial = await post(path, 201, sale(1, snack));
+  await post(corrections + '/' + partial.id + '/void', 201, { ...reversal, requestId: randomUUID(), stockReturned: false });
+  const first = await post('/api/accounts', 201, { name: 'Ana de prueba' });
+  const second = await post('/api/accounts', 201, { name: 'Luis de prueba' });
+  const mixed = await post(path, 201, { ...sale(10, bottle), payment: { ...noPayment, cash: 5000, transfer: 4000 },
+    creditShares: [{ accountId: first.id, amount: 6000 }, { accountId: second.id, amount: 5000 }] });
+  const mixedVoid = corrections + '/' + mixed.id + '/void';
+  const cashier = { username: 'cajera', secret: '138246' };
+  await post('/api/operators', 201, { ...cashier, name: 'Cajera de prueba' });
+  await server.signIn('login', cashier, 200);
+  await json(corrections, 403);
+  await post(mixedVoid, 403, { ...reversal, requestId: randomUUID() });
+  await server.signIn('login', { username: 'admin-prueba', secret: 'clave-ficticia-2026' }, 200);
+  await post(mixedVoid, 201, { ...reversal, requestId: randomUUID() });
+  const totals = (await json(closePath, 200)).totals;
+  assert.deepEqual([totals.salesTotal, totals.cashReceived, totals.transferExpected, totals.pendingBalance, totals.tokensRedeemed],
+    [0, 0, 0, 0, 0]);
+  assert.deepEqual((await json(path, 200)).map(({ voidedAt }) => Boolean(voidedAt)), [true, true, true]);
+  assert.equal((await json('/api/tejo', 200)).tokenCounts.redeemed, 0);
+  assert.deepEqual(Object.fromEntries((await json('/api/products', 200)).map(({ id, stock }) => [id, stock])),
+    { [beer.productId]: 2, [snack.productId]: 1, [bottle.productId]: 2 });
+  const newCount = await server.recordCashCount(shiftId,
+    { salesCounted: 100000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 100 }, count.countId, 'Canjes anulados');
+  await post(closePath + '/close', 201, { ...newCount, nextBase: 100000, note: '' });
+  assert.equal((await server.fetch(closePath + '/report.pdf')).status, 200);
+  assert.equal((await json('/api/audit', 200)).filter(({ kind }) => kind === 'redemption_void').length, 3);
 });
 
 test('acepta jugadores sin nombre y asigna los chicos por cantidad después de jugar', { timeout: 20000 }, async (t) => {

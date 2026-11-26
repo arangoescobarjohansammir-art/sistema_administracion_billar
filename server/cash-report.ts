@@ -95,16 +95,19 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
   ]);
 
   const redemptions = database.prepare([
-    'SELECT r.id, r.created_at AS createdAt, r.tokens, r.allowance, r.subtotal, r.extra, a.name',
+    'SELECT r.id, r.created_at AS createdAt, r.tokens, r.subtotal, r.extra, a.name, v.reason AS voidReason,',
+    "(SELECT actor_name FROM cash_audit WHERE kind = 'redemption_void' AND target_id = r.id ORDER BY id LIMIT 1) AS voidedBy",
     'FROM cash_shift_redemptions tracked JOIN tejo_redemptions r ON r.id = tracked.redemption_id',
     'LEFT JOIN customer_accounts a ON a.id = r.account_id',
+    'LEFT JOIN tejo_redemption_voids v ON v.redemption_id = r.id',
     'WHERE tracked.shift_id = ? AND r.round_id IS NULL ORDER BY r.id',
   ].join(' ')).all(id);
   const redeemedItems = database.prepare('SELECT quantity, label FROM tejo_redemption_items WHERE redemption_id = ? ORDER BY id');
   const redemptionRows = redemptions.map((entry) => [
-    date(entry.createdAt) + '\nCanje #' + text(entry.id),
-    text(entry.name ?? 'Sin nombre') + '\n' + redeemedItems.all(Number(entry.id)).map((line) =>
-      text(line.quantity) + ' x ' + text(line.label)).join('\n'),
+    date(entry.createdAt) + '\nCanje #' + text(entry.id) + (entry.voidReason ? '\nAnulado' : ''),
+    [text(entry.name ?? 'Sin nombre'), ...redeemedItems.all(Number(entry.id)).map((line) =>
+      text(line.quantity) + ' x ' + text(line.label)),
+    entry.voidReason ? 'Anulación: ' + text(entry.voidReason) + (entry.voidedBy ? ' · ' + text(entry.voidedBy) : '') : ''].filter(Boolean).join('\n'),
     count(entry.tokens), money(entry.subtotal), money(entry.extra),
   ]);
   const issued = database.prepare([

@@ -7,10 +7,12 @@ const clock = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle:
 type Sale = {
   id: number; customer: string | null; total: number; createdAt: string;
   cash: number | null; transfer: number | null; tokens: number | null; voidedAt: string | null;
+  redemptionTokens: number;
   voidReason: string | null; stockReturned: number | null; items: { productId: number; label: string; quantity: number }[];
   creditShares: { accountId: number; name: string; amount: number }[];
 };
-type Sales = { shiftId: number | null; sales: Sale[] };
+type CorrectionScope = 'sales' | 'redemptions';
+type CorrectionPage = { shiftId: number | null; entries: Sale[] };
 
 function Users() {
   const [users, setUsers] = useState<Operator[] | null>(null);
@@ -122,7 +124,7 @@ function AuditLog() {
   </section>;
 }
 
-function VoidForm({ sale, onDone, onCancel }: { sale: Sale; onDone: () => void; onCancel: () => void }) {
+function VoidForm({ sale, scope, onDone, onCancel }: { sale: Sale; scope: CorrectionScope; onDone: () => void; onCancel: () => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const write = useOperation();
@@ -133,7 +135,7 @@ function VoidForm({ sale, onDone, onCancel }: { sale: Sale; onDone: () => void; 
     setError('');
     setBusy(true);
     try {
-      await write('corrections/sales/' + sale.id + '/void', {
+      await write('corrections/' + scope + '/' + sale.id + '/void', {
         reason: values.get('reason'), stockReturned: values.get('stockReturned') === 'yes', confirmed: values.has('confirmed'),
       });
       onDone();
@@ -142,17 +144,18 @@ function VoidForm({ sale, onDone, onCancel }: { sale: Sale; onDone: () => void; 
     } finally { setBusy(false); }
   }
   return <form onSubmit={save} className="sale-correction">
-    <h4>Anular venta #{sale.id}</h4>
+    <h4>Anular {scope === 'sales' ? 'venta' : 'canje'} #{sale.id}</h4>
     <fieldset disabled={busy}>
       <label>Motivo de la anulación<textarea name="reason" maxLength={300} required rows={2} /></label>
-      <label>¿Todos los productos de la venta volvieron al inventario?
+      <label>¿Todos los productos volvieron al inventario?
         <select name="stockReturned" defaultValue="" required>
           <option value="" disabled>Selecciona una opción</option><option value="yes">Sí, todos volvieron</option>
           <option value="no">No, conservar la salida de inventario</option>
         </select>
       </label>
       <label className="inline-check"><input type="checkbox" name="confirmed" required />
-        {sale.cash || sale.transfer || sale.tokens ? 'Confirmo que devolví el pago por el medio indicado o que el cobro no llegó a realizarse.'
+        {scope === 'redemptions' ? 'Confirmo que las fichas y cualquier pago adicional se devolvieron o que nunca los recibí.'
+          : sale.cash || sale.transfer || sale.tokens ? 'Confirmo que devolví el pago por el medio indicado o que el cobro no llegó a realizarse.'
           : sale.creditShares.length ? 'Confirmo que corresponde retirar el cargo de las cuentas indicadas.'
             : 'Confirmo que corresponde retirar este cargo de la cuenta.'}</label>
     </fieldset>
@@ -164,66 +167,74 @@ function VoidForm({ sale, onDone, onCancel }: { sale: Sale; onDone: () => void; 
   </form>;
 }
 
-function Corrections() {
-  const [data, setData] = useState<Sales | null>(null);
+function Corrections({ scope }: { scope: CorrectionScope }) {
+  const [data, setData] = useState<CorrectionPage | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
+  const redemption = scope === 'redemptions';
+  const name = redemption ? 'Canje' : 'Venta';
   async function load(before?: number) {
     setError('');
     setBusy(true);
     try {
-      const result = await api<Sales>('corrections/sales' + (before ? '?before=' + before : ''));
+      const response = await api<{ shiftId: number | null } & Record<CorrectionScope, Sale[]>>(
+        'corrections/' + scope + (before ? '?before=' + before : ''));
+      const result = { shiftId: response.shiftId, entries: response[scope] };
       setData((previous) => before && previous?.shiftId === result.shiftId
-        ? { ...result, sales: [...previous.sales, ...result.sales] } : result);
-      setMore(result.sales.length === 50);
+        ? { ...result, entries: [...previous.entries, ...result.entries] } : result);
+      setMore(result.entries.length === 50);
     } catch (error) { setError(message(error)); }
     finally { setBusy(false); }
   }
   useEffect(() => { void load(); }, []);
   return <section>
-    <div className="section-title"><h3>Anular venta de productos</h3>
-      <button className="secondary" disabled={busy} onClick={() => void load()}>Actualizar ventas</button></div>
-    <p>Ventas directas de productos del turno abierto. El sistema conserva la venta original y registra la corrección en el cuadre.</p>
+    <div className="section-title"><h3>{redemption ? 'Anular canje de fichas' : 'Anular venta de productos'}</h3>
+      <button className="secondary" disabled={busy} onClick={() => void load()}>Actualizar {redemption ? 'canjes' : 'ventas'}</button></div>
+    <p>{redemption ? 'Canjes de fichas físicas registrados en Venta durante el turno abierto. Confirma qué se devolvió antes de anular.'
+      : 'Ventas directas de productos del turno abierto. El sistema conserva la venta original y registra la corrección en el cuadre.'}</p>
     {error && <p role="alert">{error}</p>}
     {status && <p role="status">{status}</p>}
-    {!data && busy && <p role="status">Consultando ventas…</p>}
-    {data?.sales.length === 0 && <p>{data.shiftId === null ? 'Abre un turno de caja para consultar sus ventas.' : 'Todavía no se han registrado ventas directas en este turno.'}</p>}
-    {data && <ul className="ledger-list">{data.sales.map((sale) => <li key={sale.id}>
-      <div className="row-between"><strong>Venta #{sale.id}{sale.voidedAt ? ' · Anulada' : ''}</strong><strong>{money.format(sale.total)}</strong></div>
+    {!data && busy && <p role="status">Consultando operaciones…</p>}
+    {data?.entries.length === 0 && <p>{data.shiftId === null ? 'Abre un turno de caja para consultar sus operaciones.'
+      : redemption ? 'Todavía no se han registrado canjes en este turno.' : 'Todavía no se han registrado ventas directas en este turno.'}</p>}
+    {data && <ul className="ledger-list">{data.entries.map((sale) => <li key={sale.id}>
+      <div className="row-between"><strong>{name} #{sale.id}{sale.voidedAt ? (redemption ? ' · Anulado' : ' · Anulada') : ''}</strong><strong>{money.format(sale.total)}</strong></div>
       <p>{sale.customer ?? 'Sin nombre'} · {clock.format(new Date(sale.createdAt))}</p>
       <p>{sale.items.map((item) => item.quantity + ' × ' + item.label).join(' · ')}</p>
       {sale.creditShares.map((part) => <p key={part.accountId}>{part.name} · Fiado: {money.format(part.amount)}</p>)}
       <p>Cobro registrado: {[
+        sale.redemptionTokens ? sale.redemptionTokens + (sale.redemptionTokens === 1 ? ' ficha de canje' : ' fichas de canje') : '',
         sale.cash ? 'Efectivo ' + money.format(sale.cash) : '',
         sale.transfer ? 'Transferencia ' + money.format(sale.transfer) : '',
         sale.tokens ? sale.tokens + ' fichas' : '',
       ].filter(Boolean).join(' · ') || 'Sin pago registrado'}</p>
       {sale.voidedAt ? <p>Motivo: {sale.voidReason} · {sale.stockReturned ? 'Productos devueltos al inventario' : 'Sin devolución a inventario'}</p>
-        : selected === sale.id ? <VoidForm key={sale.id} sale={sale} onCancel={() => setSelected(null)}
-            onDone={() => { setSelected(null); setStatus('Venta #' + sale.id + ' anulada.'); void load(); }} />
-          : <button className="secondary" disabled={busy} onClick={() => { setSelected(sale.id); setStatus(''); }}>Anular venta #{sale.id}</button>}
+        : selected === sale.id ? <VoidForm key={sale.id} sale={sale} scope={scope} onCancel={() => setSelected(null)}
+            onDone={() => { setSelected(null); setStatus(name + ' #' + sale.id + (redemption ? ' anulado.' : ' anulada.')); void load(); }} />
+          : <button className="secondary" disabled={busy} onClick={() => { setSelected(sale.id); setStatus(''); }}>Anular {name.toLowerCase()} #{sale.id}</button>}
     </li>)}</ul>}
-    {more && <button className="secondary" disabled={busy} onClick={() => void load(data?.sales.at(-1)?.id)}>Cargar ventas anteriores</button>}
+    {more && <button className="secondary" disabled={busy} onClick={() => void load(data?.entries.at(-1)?.id)}>Cargar operaciones anteriores</button>}
   </section>;
 }
 
 export function Staff() {
-  const [section, setSection] = useState<'users' | 'audit' | 'corrections' | 'payments' | 'tejo'>('users');
+  const [section, setSection] = useState<'users' | 'audit' | 'sales' | 'redemptions' | 'payments' | 'tejo'>('users');
   return <section aria-labelledby="staff-title">
     <h2 id="staff-title">Personal y correcciones</h2>
     <nav className="actions accounts-nav" aria-label="Administración de caja">
       <button className="navigation" aria-pressed={section === 'users'} onClick={() => setSection('users')}>Usuarios</button>
       <button className="navigation" aria-pressed={section === 'audit'} onClick={() => setSection('audit')}>Registro</button>
-      <button className="navigation" aria-pressed={section === 'corrections'} onClick={() => setSection('corrections')}>Anular ventas</button>
+      <button className="navigation" aria-pressed={section === 'sales'} onClick={() => setSection('sales')}>Anular ventas</button>
+      <button className="navigation" aria-pressed={section === 'redemptions'} onClick={() => setSection('redemptions')}>Anular canjes</button>
       <button className="navigation" aria-pressed={section === 'payments'} onClick={() => setSection('payments')}>Anular abonos</button>
       <button className="navigation" aria-pressed={section === 'tejo'} onClick={() => setSection('tejo')}>Corregir cargos de tejo</button>
     </nav>
     {section === 'users' && <Users />}
     {section === 'audit' && <AuditLog />}
-    {section === 'corrections' && <Corrections />}
+    {(section === 'sales' || section === 'redemptions') && <Corrections key={section} scope={section} />}
     {(section === 'payments' || section === 'tejo') && <AccountCorrections key={section} mode={section} />}
   </section>;
 }

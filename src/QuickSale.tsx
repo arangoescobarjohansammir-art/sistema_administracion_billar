@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { cashChange, mixedCreditPlan } from '../shared/tender';
-import { tejoProductValue } from '../shared/tejo';
+import { maxRedemptionTokens, tejoProductValue } from '../shared/tejo';
 import { CashChangeField } from './CashTools';
 import { AccountPicker } from './CustomerLookup';
 import { ProductCard } from './ProductPicker';
@@ -13,7 +13,7 @@ type CreditPart = { key: number; accountId: string; amount: string };
 type CreditShare = { accountId: number; name: string; amount: number };
 type RecentSale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number }[];
   payment: Payment | null; creditShares: CreditShare[] };
-type RecentRedemption = { id: number; tokens: number; subtotal: number; extra: number; name: string | null;
+type RecentRedemption = { id: number; tokens: number; subtotal: number; extra: number; name: string | null; voidedAt: string | null;
   createdAt: string; items: { label: string; quantity: number }[]; creditShares: CreditShare[] };
 const emptyCreditPart = (key: number): CreditPart => ({ key, accountId: '', amount: '' });
 const emptyCreditParts = () => [emptyCreditPart(1), emptyCreditPart(2)];
@@ -72,6 +72,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
   const total = items.reduce((sum, { product, quantity }) => sum + product.price * quantity, 0);
   const showsTokens = mode === 'tokens' || mode === 'mixed';
   const tokens = showsTokens ? payment.tokens : 0;
+  const tokenLimit = Math.min(1000, maxRedemptionTokens(total));
   const productRedemption = tokens > 0;
   const coveredProducts = Math.min(total, tokens * tejoProductValue);
   const due = total - coveredProducts;
@@ -94,7 +95,7 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
     (splitActive ? partsReady : (!accountRequired || Boolean(accountId)) &&
       (mode !== 'mixed' || mixedCreditPlan(remaining, mixedCredit).valid)) &&
     (mode !== 'tokens' || tokens > 0) && Number.isInteger(tokens) && tokens >= 0 &&
-    tokens <= 1000 &&
+    tokens <= tokenLimit &&
     (cashDue <= 0 || change === null || (Number.isInteger(change) && change >= 0));
   const visible = products.filter((product) => normalize(label(product)).includes(normalize(query.trim())));
 
@@ -282,9 +283,10 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
               {mode !== 'credit' && <div className="payment-options payment-options-four" aria-label="Medio de pago">{paymentOptions.map(({ id, text }) =>
                 <button key={id} type="button" className="secondary" aria-pressed={mode === id} onClick={() => chooseMethod(id)}>{text}</button>)}</div>}
               {showsTokens && <div className="sale-token-quantity">
-                <TokenQuantity count={tokens} rate={tejoProductValue} max={1000}
+                <TokenQuantity count={tokens} rate={tejoProductValue} max={tokenLimit}
                   onChange={(count) => setPayment({ ...payment, tokens: count })} />
-                {productRedemption && <div className="sale-tender" aria-live="polite">
+                {tokens > tokenLimit && <p role="alert">Corrige la cantidad. Puedes recibir hasta {tokenLimit} {tokenLimit === 1 ? 'ficha' : 'fichas'}.</p>}
+                {productRedemption && tokens <= tokenLimit && <div className="sale-tender" aria-live="polite">
                   <div className="row-between"><span>Las fichas cubren</span><strong>{money.format(coveredProducts)}</strong></div>
                   <div className="row-between"><span>Queda por pagar</span><strong>{money.format(due)}</strong></div>
                   {tokens * tejoProductValue > total && <p>El valor de ficha que sobre no se devuelve ni queda como saldo.</p>}
@@ -347,7 +349,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
       </details>
       <details className="recent-sales"><summary>Canjes en ventas recientes</summary>
         {!redemptions.length ? <p>Sin canjes registrados.</p> : <ul className="ledger-list">{redemptions.map((entry) => (
-          <li key={entry.id}><div className="row-between"><strong>Canje #{entry.id} · {entry.tokens} {entry.tokens === 1 ? 'ficha' : 'fichas'}</strong>
+          <li key={entry.id}><div className="row-between"><strong>Canje #{entry.id} · {entry.tokens} {entry.tokens === 1 ? 'ficha' : 'fichas'}
+            {entry.voidedAt && ' · Anulado'}</strong>
             <strong>{money.format(entry.subtotal)}</strong></div>
             <time dateTime={entry.createdAt}>{time.format(new Date(entry.createdAt))}</time>
             <p>{entry.items.map((item) => item.quantity + ' × ' + item.label).join(' · ')}</p>

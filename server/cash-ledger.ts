@@ -11,7 +11,8 @@ export function shiftTokenTotals(database: DatabaseSync, shiftId: number, openin
       (SELECT COALESCE(SUM(tokens), 0) FROM cash_shift_payments
         JOIN valid_account_payments ON valid_account_payments.id = payment_id WHERE shift_id = $shiftId) AS received,
       (SELECT COALESCE(SUM(tokens), 0) FROM cash_shift_redemptions
-        JOIN tejo_redemptions ON tejo_redemptions.id = redemption_id WHERE shift_id = $shiftId) AS redeemed,
+        JOIN tejo_redemptions ON tejo_redemptions.id = redemption_id
+        WHERE shift_id = $shiftId AND redemption_id NOT IN (SELECT redemption_id FROM tejo_redemption_voids)) AS redeemed,
       (SELECT COUNT(*) FROM cash_shift_tokens WHERE shift_id = $shiftId) +
         (SELECT COUNT(*) FROM cash_shift_slot_tokens WHERE shift_id = $shiftId) AS issued
   `).get({ $shiftId: shiftId });

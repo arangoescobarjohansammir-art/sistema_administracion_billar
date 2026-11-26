@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
-import { courtLabel, tejoCourtsPerType, tejoProductValue, type TejoType } from '../shared/tejo.js';
+import { courtLabel, maxRedemptionTokens, tejoCourtsPerType, tejoProductValue, type TejoType } from '../shared/tejo.js';
 import { type createAccounts, creditShares, paymentFields, paymentTotal, saleItems, ValidationError, whole } from './accounts.js';
 import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
@@ -60,6 +60,10 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     '  movement_id INTEGER NOT NULL UNIQUE REFERENCES inventory_movements(id)',
     ') STRICT;',
     'CREATE INDEX IF NOT EXISTS tejo_items_by_redemption ON tejo_redemption_items(redemption_id, id);',
+    'CREATE TABLE IF NOT EXISTS tejo_redemption_voids (',
+    '  redemption_id INTEGER PRIMARY KEY REFERENCES tejo_redemptions(id), created_at TEXT NOT NULL, reason TEXT NOT NULL,',
+    '  stock_returned INTEGER NOT NULL CHECK (stock_returned IN (0, 1))',
+    ') STRICT;',
     'CREATE TABLE IF NOT EXISTS tejo_benefits (',
     '  round_id INTEGER NOT NULL REFERENCES tejo_rounds(id), account_id INTEGER NOT NULL REFERENCES customer_accounts(id),',
     '  issued_at TEXT, redemption_id INTEGER UNIQUE REFERENCES tejo_redemptions(id),',
@@ -151,6 +155,9 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
     });
     const subtotal = products.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     if (subtotal > 1_000_000_000) throw new ValidationError(400, 'El valor de los productos es demasiado alto.');
+    if (round === null && tokens > maxRedemptionTokens(subtotal)) {
+      throw new ValidationError(400, 'Para estos productos puedes recibir hasta ' + maxRedemptionTokens(subtotal) + ' fichas.');
+    }
     const extra = Math.max(0, subtotal - allowance);
     const paid = paymentTotal(payment);
     if (paid > extra) throw new ValidationError(400, 'El pago supera el excedente del canje. La diferencia de la ficha no se devuelve.');
@@ -228,8 +235,9 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
 
   const redemptionSelect = [
     'SELECT tejo_redemptions.id, tokens, allowance, subtotal, extra, tejo_redemptions.created_at AS createdAt,',
-    'customer_accounts.name, sale_id AS saleId FROM tejo_redemptions',
+    'customer_accounts.name, sale_id AS saleId, void.created_at AS voidedAt FROM tejo_redemptions',
     'LEFT JOIN customer_accounts ON customer_accounts.id = tejo_redemptions.account_id',
+    'LEFT JOIN tejo_redemption_voids void ON void.redemption_id = tejo_redemptions.id',
   ].join(' ');
 
   function withItems(redemption: Record<string, unknown>) {
@@ -286,7 +294,10 @@ export function createTejo(database: DatabaseSync, accounts: Accounts) {
           'SELECT (SELECT COUNT(*) FROM tejo_benefits WHERE issued_at IS NOT NULL) +',
           '(SELECT COUNT(*) FROM tejo_slot_benefits WHERE issued_at IS NOT NULL) AS total',
         ].join(' ')).get()?.total),
-        redeemed: Number(database.prepare('SELECT COALESCE(SUM(tokens), 0) AS total FROM tejo_redemptions WHERE round_id IS NULL').get()?.total),
+        redeemed: Number(database.prepare(`
+          SELECT COALESCE(SUM(tokens), 0) AS total FROM tejo_redemptions
+          WHERE round_id IS NULL AND id NOT IN (SELECT redemption_id FROM tejo_redemption_voids)
+        `).get()?.total),
         receivedAsPayment: Number(database.prepare('SELECT COALESCE(SUM(tokens), 0) AS total FROM valid_account_payments').get()?.total),
       },
     };

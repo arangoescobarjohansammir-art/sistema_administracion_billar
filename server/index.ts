@@ -97,7 +97,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       const before = Number(new URL(request.url ?? '/', `http://${host}`).searchParams.get('before') ?? Number.MAX_SAFE_INTEGER);
       return sendJson(response, 200, audit.list(Number.isSafeInteger(before) && before > 0 ? before : Number.MAX_SAFE_INTEGER));
     }
-    if (path === '/api/corrections/sales' || path.startsWith('/api/corrections/sales/')) {
+    if (/^\/api\/corrections\/(sales|redemptions)(\/|$)/.test(path)) {
       return saleCorrections(request, response, path);
     }
     return accountCorrections(request, response, path);

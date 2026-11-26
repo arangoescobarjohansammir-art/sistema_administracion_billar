@@ -1,5 +1,6 @@
 export const tejoCourtsPerType = 6;
 export const tejoProductValue = 4000;
+export const maxRedemptionTokens = (subtotal: number) => Math.ceil(subtotal / tejoProductValue);
 export const tejoTypes = ['maxi', 'largo'] as const;
 export type TejoType = typeof tejoTypes[number];
 export const tejoTeams = ['A', 'B'] as const;

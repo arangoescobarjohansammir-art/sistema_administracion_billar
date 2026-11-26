@@ -63,6 +63,9 @@ export function readAccounting(database: DatabaseSync, range: AccountingRange, n
       SELECT issued_at, 1, 0 FROM tejo_slot_benefits WHERE issued_at >= $start AND issued_at < $end
       UNION ALL
       SELECT created_at, 0, tokens FROM tejo_redemptions WHERE round_id IS NULL AND created_at >= $start AND created_at < $end
+      UNION ALL
+      SELECT v.created_at, 0, -r.tokens FROM tejo_redemption_voids v JOIN tejo_redemptions r ON r.id = v.redemption_id
+        WHERE r.round_id IS NULL AND v.created_at >= $start AND v.created_at < $end
     ) GROUP BY day
   `).all({ $start: start, $end: cutoff });
   for (const token of tokens) Object.assign(dayAt(String(token.day)), { issued: Number(token.issued), redeemed: Number(token.redeemed) });
