@@ -30,6 +30,7 @@ export type UnexpectedWithdrawal = {
 export type DailySales = {
   day: string; sales: number; transactions: number;
   cash: number; transfer: number; tokens: number; tokenAmount: number;
+  voidedSales?: number;
 };
 
 export type RegisterSummary = {

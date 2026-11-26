@@ -45,7 +45,10 @@ function Sales({ data }: { data: AdminSnapshot }) {
   const availableDay = data.daily.find((row) => row.day === chosenDay);
   const selected = availableDay ?? data.daily.at(-1);
   const chart = data.daily.slice(-7);
-  const peak = Math.max(1, ...chart.map((row) => row.sales));
+  const min = Math.min(0, ...chart.map((row) => row.sales));
+  const max = Math.max(0, ...chart.map((row) => row.sales));
+  const span = max - min || 1;
+  const zero = -min / span * 100;
   if (!selected) return <p className="panel">Todavía no hay ventas sincronizadas.</p>;
   return <>
     <section className="panel">
@@ -57,14 +60,17 @@ function Sales({ data }: { data: AdminSnapshot }) {
         </select></label>
       </div>
       <dl className="stats">
-        <Stat label="Ventas y cargos">{money(selected.sales)}</Stat>
-        <Stat label="Operaciones registradas">{selected.transactions}</Stat>
-        <Stat label="Efectivo recibido">{money(selected.cash)}</Stat>
-        <Stat label="Transferencias recibidas">{money(selected.transfer)}</Stat>
-        <Stat label="Valor pagado con fichas">{money(selected.tokenAmount)} <small>({selected.tokens})</small></Stat>
+        <Stat label="Ventas y cargos netos">{money(selected.sales)}</Stat>
+        <Stat label="Ventas y cargos registrados">{selected.transactions}</Stat>
+        <Stat label="Efectivo neto">{money(selected.cash)}</Stat>
+        <Stat label="Transferencias netas">{money(selected.transfer)}</Stat>
+        <Stat label="Valor neto en fichas">{money(selected.tokenAmount)} <small>({selected.tokens})</small></Stat>
+        {selected.voidedSales !== undefined && <Stat label="Ventas y cargos anulados">{money(selected.voidedSales)}</Stat>}
         <Stat label="Saldo pendiente total">{money(data.pendingBalance)}</Stat>
       </dl>
-      <p className="muted">Los cobros del día incluyen abonos a cuentas anteriores. El saldo pendiente reúne todas las cuentas.</p>
+      <p className="muted">{selected.voidedSales === undefined
+        ? 'El criterio diario de anulaciones se aplicará cuando sincronice la caja actualizada.'
+        : 'Las anulaciones se descuentan el día en que se registran. Los cobros incluyen abonos y el saldo pendiente reúne todas las cuentas.'}</p>
     </section>
     <section className="panel">
       <h2>Últimos 7 días registrados</h2>
@@ -72,7 +78,9 @@ function Sales({ data }: { data: AdminSnapshot }) {
         {chart.map((row) => <li key={row.day}>
           <button className="chart-row" aria-pressed={row.day === selected.day} onClick={() => setChosenDay(row.day)}>
             <span>{dayLabel(row.day)}</span><span className="track" aria-hidden="true">
-              <span style={{ width: (row.sales / peak * 100) + '%' }} />
+              {min < 0 && <i className="track-zero" style={{ left: zero + '%' }} />}
+              <span className={row.sales < 0 ? 'negative' : undefined}
+                style={{ left: ((Math.min(0, row.sales) - min) / span * 100) + '%', width: (Math.abs(row.sales) / span * 100) + '%' }} />
             </span><strong>{money(row.sales)}</strong>
           </button>
         </li>)}

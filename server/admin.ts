@@ -25,36 +25,17 @@ function registerSummary({ shift, totals, pendingGames }: ReturnType<Cash['admin
 
 export function createAdminSnapshot(database: DatabaseSync, cash: Cash, accounts: Accounts, now = new Date()): AdminSnapshot {
   const day = clubDay(now);
-  // Bogotá uses UTC−5. Bound the queries by local calendar days and exclude earlier data.
-  const start = new Date(new Date(day + 'T05:00:00.000Z').getTime() - 29 * 86_400_000);
-  const daily = Array.from({ length: 30 }, (_, index) => ({
-    day: clubDay(new Date(start.getTime() + index * 86_400_000)),
-    sales: 0, transactions: 0, cash: 0, transfer: 0, tokens: 0, tokenAmount: 0,
-  }));
-  const byDay = new Map(daily.map((item) => [item.day, item]));
-  for (const row of database.prepare(`
-    SELECT date(created_at, '-5 hours') AS day,
-      COUNT(CASE WHEN NOT EXISTS (SELECT 1 FROM sale_credit_shares WHERE share_sale_id = valid_sales.id) THEN 1 END) AS transactions,
-      SUM(total) AS amount
-    FROM valid_sales WHERE created_at >= ? GROUP BY day
-  `).all(start.toISOString())) {
-    const target = byDay.get(String(row.day));
-    if (target) Object.assign(target, { sales: Number(row.amount), transactions: Number(row.transactions) });
-  }
-  for (const row of database.prepare(`
-    SELECT date(created_at, '-5 hours') AS day, SUM(cash) AS cash, SUM(transfer) AS transfer,
-      SUM(tokens) AS tokens, SUM(tokens * token_value) AS tokenAmount
-    FROM valid_account_payments WHERE created_at >= ? GROUP BY day
-  `).all(start.toISOString())) {
-    const target = byDay.get(String(row.day));
-    if (target) Object.assign(target, {
-      cash: Number(row.cash), transfer: Number(row.transfer), tokens: Number(row.tokens), tokenAmount: Number(row.tokenAmount),
-    });
-  }
+  const accounting = readAccounting(database, mobileAccountingRange(now), now);
+  const byDay = new Map(accounting.days.map((item) => [item.day, item]));
+  const daily = Array.from({ length: 30 }, (_, index) => {
+    const date = clubDay(new Date(now.getTime() - (29 - index) * 86_400_000));
+    const { sales = 0, transactions = 0, cash = 0, transfer = 0, tokens = 0, tokenValue = 0, voidedSales = 0 } = byDay.get(date) ?? {};
+    return { day: date, sales, transactions, cash, transfer, tokens, tokenAmount: tokenValue, voidedSales };
+  });
   const { active, closures, pendingBalance } = cash.adminOverview();
   return {
     version: 1, purchaseFundingEnabled: true, day, daily, pendingBalance, openBalances: accounts.openBalances(),
-    accounting: readAccounting(database, mobileAccountingRange(now), now),
+    accounting,
     active: active && registerSummary(active),
     closures: closures.map(registerSummary),
     unexpectedWithdrawals: database.prepare(`

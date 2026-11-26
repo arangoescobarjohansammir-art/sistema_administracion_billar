@@ -66,8 +66,10 @@ ul { list-style: none; padding: 0; }
 .sales-chart { display: grid; gap: 4px; }
 .chart-row { display: grid; grid-template-columns: minmax(78px, 1fr) minmax(12px, 3fr) auto; align-items: center; gap: 8px; width: 100%; text-align: start; font-size: .85rem; border-color: transparent; }
 .chart-row[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--control-line); }
-.track { height: 8px; background: var(--neutral); border-radius: 4px; }
-.track span { display: block; height: 100%; background: var(--copper); border-radius: 4px; }
+.track { position: relative; height: 8px; background: var(--neutral); border-radius: 4px; }
+.track span { position: absolute; height: 100%; background: var(--copper); border-radius: 4px; }
+.track span.negative { background: var(--rust); }
+.track-zero { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--control-line); z-index: 1; }
 .rows li { padding: 10px 0; min-height: 44px; font-size: .93rem; }
 .rows li + li, details + details { border-top: 1px solid var(--line); }
 .rows li strong:last-child { text-align: end; }

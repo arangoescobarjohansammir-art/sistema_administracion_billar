@@ -8,9 +8,11 @@ export function readAccounting(database: DatabaseSync, range: AccountingRange, n
   const asOf = now.toISOString();
   const cutoff = asOf < end ? new Date(now.getTime() + 1).toISOString() : end;
   const salesEvents = `
-    SELECT created_at AS at, account_id AS account, total AS sales, 0 AS cancellation FROM sales WHERE created_at < $end
+    SELECT s.created_at AS at, s.account_id AS account, s.total AS sales, 0 AS cancellation,
+      NOT EXISTS (SELECT 1 FROM sale_credit_shares WHERE share_sale_id = s.id) AS transactions
+    FROM sales s WHERE s.created_at < $end
     UNION ALL
-    SELECT v.created_at, s.account_id, -s.total, s.total FROM sale_voids v JOIN sales s ON s.id = v.sale_id WHERE v.created_at < $end
+    SELECT v.created_at, s.account_id, -s.total, s.total, 0 FROM sale_voids v JOIN sales s ON s.id = v.sale_id WHERE v.created_at < $end
   `;
   const paymentEvents = `
     SELECT created_at AS at, account_id AS account, sale_id AS sale, cash, transfer, tokens, token_value AS rate
@@ -24,15 +26,15 @@ export function readAccounting(database: DatabaseSync, range: AccountingRange, n
   `;
   const rows = database.prepare(`
     WITH events AS (
-      SELECT at, account, sales, cancellation AS voidedSales, 0 AS cash, 0 AS transfer, 0 AS tokens, 0 AS tokenValue,
+      SELECT at, account, sales, cancellation AS voidedSales, transactions, 0 AS cash, 0 AS transfer, 0 AS tokens, 0 AS tokenValue,
         0 AS installments, CASE WHEN account IS NULL THEN 0 ELSE sales END AS charges, 0 AS customerPayments FROM (${salesEvents})
       UNION ALL
-      SELECT at, account, 0, 0, cash, transfer, tokens, tokens * rate,
+      SELECT at, account, 0, 0, 0, cash, transfer, tokens, tokens * rate,
         CASE WHEN sale IS NULL THEN cash + transfer + tokens * rate ELSE 0 END, 0,
         CASE WHEN account IS NULL THEN 0 ELSE cash + transfer + tokens * rate END FROM (${paymentEvents})
     )
     SELECT CASE WHEN at < $start THEN '' ELSE date(at, '-5 hours') END AS day, account,
-      SUM(sales) AS sales, SUM(voidedSales) AS voidedSales, SUM(cash) AS cash, SUM(transfer) AS transfer,
+      SUM(sales) AS sales, SUM(voidedSales) AS voidedSales, SUM(transactions) AS transactions, SUM(cash) AS cash, SUM(transfer) AS transfer,
       SUM(tokens) AS tokens, SUM(tokenValue) AS tokenValue, SUM(installments) AS installments,
       SUM(charges) AS charges, SUM(customerPayments) AS customerPayments
     FROM events WHERE at >= $start OR account IS NOT NULL GROUP BY day, account
@@ -40,7 +42,7 @@ export function readAccounting(database: DatabaseSync, range: AccountingRange, n
   const days = new Map<string, AccountingDay>();
   const dayAt = (day: string) => {
     let value = days.get(day);
-    if (!value) { value = { day, ...emptyAmounts() }; days.set(day, value); }
+    if (!value) { value = { day, transactions: 0, ...emptyAmounts() }; days.set(day, value); }
     return value;
   };
   const opening = new Map<number, number>();
@@ -53,6 +55,7 @@ export function readAccounting(database: DatabaseSync, range: AccountingRange, n
     if (day) {
       const value = dayAt(day);
       for (const field of fields) value[field] += Number(row[field] ?? 0);
+      value.transactions += Number(row.transactions);
       if (row.account !== null && (charges || payments)) changes.push({ day, id: Number(row.account), charges, payments });
     } else if (row.account !== null) opening.set(Number(row.account), charges - payments);
   }

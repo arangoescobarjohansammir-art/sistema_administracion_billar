@@ -6,10 +6,15 @@ export function demoSnapshot(now = new Date()): AdminSnapshot {
   const today = new Date(day + 'T05:00:00.000Z');
   const days = Array.from({ length: 30 }, (_, index) => {
     const date = new Date(today.getTime() - (29 - index) * 86_400_000);
+    if (index === 23 || index === 24) {
+      const amount = index === 23 ? 8000 : -8000;
+      return { day: clubDay(date), sales: amount, transactions: index === 23 ? 1 : 0, cash: amount,
+        transfer: 0, tokens: 0, tokenAmount: 0, voidedSales: index === 24 ? 8000 : 0 };
+    }
     const sales = [412_000, 238_000, 328_000, 392_000, 465_000, 708_000, 786_000][(index + 5) % 7];
     return {
       day: clubDay(date), sales, transactions: Math.round(sales / 16_000),
-      cash: Math.round(sales * 0.60), transfer: Math.round(sales * 0.26), tokens: 5, tokenAmount: 18_000,
+      cash: Math.round(sales * 0.60), transfer: Math.round(sales * 0.26), tokens: 5, tokenAmount: 18_000, voidedSales: 0,
     };
   });
   function shift(id: number, offset: number, closed: boolean, difference = 0): RegisterSummary {
@@ -37,8 +42,8 @@ export function demoSnapshot(now = new Date()): AdminSnapshot {
     closures,
     accounting: {
       from: accountingPeriod('week', days[0].day)!.from, to: day, asOf: now.toISOString(),
-      days: days.map(({ day, sales, cash, transfer, tokens, tokenAmount }) => ({
-        ...emptyAmounts(), day, sales, cash, transfer, tokens, tokenValue: tokenAmount, issued: 8, redeemed: 4,
+      days: days.map(({ day, sales, cash, transfer, tokens, tokenAmount, transactions, voidedSales }) => ({
+        ...emptyAmounts(), day, sales, cash, transfer, tokens, tokenValue: tokenAmount, transactions, voidedSales, issued: 8, redeemed: 4,
       })),
       movements: [
         { id: 1, shiftId: 17, date: closures[0].closedAt!, kind: 'purchase_in', category: 'Compras',

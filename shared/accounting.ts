@@ -6,7 +6,7 @@ export type AccountingAmounts = {
   sales: number; voidedSales: number; cash: number; transfer: number; tokens: number; tokenValue: number;
   installments: number; charges: number; customerPayments: number; issued: number; redeemed: number;
 };
-export type AccountingDay = AccountingAmounts & { day: string };
+export type AccountingDay = AccountingAmounts & { day: string; transactions: number };
 export type AccountingMovement = CashMovementCorrection & {
   id: number; shiftId: number; date: string; kind: string; category: string; reason: string;
   amount: number; salesDelta: number; purchasesDelta: number;

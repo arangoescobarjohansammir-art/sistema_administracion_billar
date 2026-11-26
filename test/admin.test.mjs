@@ -9,6 +9,7 @@ import { createCash } from '../dist/server/cash.js';
 import { createCatalog } from '../dist/server/catalog.js';
 import { createTejo } from '../dist/server/tejo.js';
 import { dashboardRefreshMs } from '../dist/shared/admin.js';
+import { accountingPeriod, accountingReport } from '../dist/shared/accounting.js';
 import { testServer } from './support/local-server.mjs';
 
 function databaseFixture(t) {
@@ -54,10 +55,10 @@ test('resume ventas y cobros por día colombiano y conserva el cierre guardado',
   const snapshot = createAdminSnapshot(database, cash, accounts, new Date('2026-11-24T05:30:00.000Z'));
   assert.equal(snapshot.daily.length, 30);
   assert.deepEqual(snapshot.daily.at(-2), {
-    day: '2026-11-23', sales: 24000, transactions: 1, cash: 0, transfer: 0, tokens: 0, tokenAmount: 0,
+    day: '2026-11-23', sales: 24000, transactions: 1, cash: 0, transfer: 0, tokens: 0, tokenAmount: 0, voidedSales: 0,
   });
   assert.deepEqual(snapshot.daily.at(-1), {
-    day: '2026-11-24', sales: 20000, transactions: 1, cash: 10000, transfer: 9000, tokens: 2, tokenAmount: 7000,
+    day: '2026-11-24', sales: 20000, transactions: 1, cash: 10000, transfer: 9000, tokens: 2, tokenAmount: 7000, voidedSales: 0,
   });
   assert.equal(snapshot.active, null);
   assert.equal(snapshot.closures[0].salesDifference, -500);
@@ -72,6 +73,36 @@ test('resume ventas y cobros por día colombiano y conserva el cierre guardado',
   assert.equal(snapshot.pendingBalance, 18000);
   assert.deepEqual(snapshot.inventory, [{ id: 1, name: 'Cerveza de prueba', brand: 'Ejemplo', presentation: 'Botella', stock: 12 }]);
   assert.deepEqual(snapshot.play, { billiard: [{ table: 2, paused: true }], tejo: [{ type: 'largo', court: 4, rounds: 1 }] });
+});
+
+test('concilia ventas y reportes cuando una venta y un abono se anulan la semana siguiente', (t) => {
+  const { database, cash, accounts } = databaseFixture(t);
+  database.exec(`
+    INSERT INTO customer_accounts VALUES (1, 'Cliente de prueba', 'cliente', '2026-11-20T05:00:00.000Z');
+    INSERT INTO sales VALUES
+      (1, NULL, 8000, '2026-11-23T04:59:59.999Z'),
+      (2, 1, 12000, '2026-11-21T05:00:00.000Z'),
+      (3, NULL, 9999, '2026-11-23T06:00:00.000Z');
+    INSERT INTO account_payments VALUES
+      (1, NULL, 1, 4000, 1000, 1, 3000, '2026-11-23T04:59:59.999Z'),
+      (2, 1, NULL, 2000, 0, 0, 3000, '2026-11-23T04:59:59.999Z');
+    INSERT INTO sale_voids VALUES (1, '2026-11-23T05:00:00.000Z', 'Registrada el lunes', 0);
+    INSERT INTO account_payment_voids VALUES (2, '2026-11-23T05:00:01.000Z', 'Abono inválido');
+  `);
+  const snapshot = createAdminSnapshot(database, cash, accounts, new Date('2026-11-23T05:30:00.000Z'));
+  const sunday = { day: '2026-11-22', sales: 8000, transactions: 1, cash: 6000, transfer: 1000,
+    tokens: 1, tokenAmount: 3000, voidedSales: 0 };
+  const monday = { day: '2026-11-23', sales: -8000, transactions: 0, cash: -6000, transfer: -1000,
+    tokens: -1, tokenAmount: -3000, voidedSales: 8000 };
+  assert.deepEqual(snapshot.daily.slice(-2), [sunday, monday]);
+  for (const expected of [sunday, monday]) {
+    const report = accountingReport(snapshot.accounting, accountingPeriod('week', expected.day));
+    const { day, sales, transactions, cash, transfer, tokens, tokenValue, voidedSales, installments } =
+      report.days.find((row) => row.day === expected.day);
+    assert.deepEqual({ day, sales, transactions, cash, transfer, tokens, tokenAmount: tokenValue, voidedSales }, expected);
+    assert.equal(installments, day === sunday.day ? 2000 : -2000);
+    assert.equal(report.amounts.sales, day === sunday.day ? 20000 : -8000);
+  }
 });
 
 test('sincroniza aportes una vez incluso si se pierde la confirmación y conserva la copia de caja', async (t) => {

@@ -47,6 +47,8 @@ Al iniciar, **Alertas** muestra los cierres con diferencias y los retiros imprev
 
 En **Reportes**, selecciona una semana o un mes y usa **Descargar PDF**. El celular consulta el mes actual y los tres meses calendario anteriores a partir de la última sincronización. Las semanas disponibles deben comenzar dentro de ese intervalo. En el computador de caja puedes consultar periodos anteriores. Los reportes incluyen movimientos de fondos, saldos y cambios diarios por cliente, cobros y cuadre de turnos cerrados. Los datos siguen las mismas reglas RLS del panel.
 
+**Ventas** y **Reportes** muestran las ventas y los cobros en su fecha original. Las anulaciones se descuentan en la fecha en que se registraron, según la hora de Colombia. Si lo anulado supera lo registrado en un día, el importe neto puede ser negativo.
+
 ## Demostración del portafolio
 
 Con `npm start`, abre [el panel de demostración local](http://127.0.0.1:4173/admin/?demo=1). Para alojar solo la demostración, compila el panel sin las dos variables `VITE_SUPABASE_…` y añade `?demo=1` al enlace publicado. La demostración incluye 30 días ficticios, un turno abierto, cierres con y sin diferencias, cuentas pendientes, juegos activos y productos con diferentes existencias.
