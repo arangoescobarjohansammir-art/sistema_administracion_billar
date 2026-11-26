@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
-import { cashMovements, expectedCashCounts, type CashMovementKind, type SavedCashCount } from '../shared/cash.js';
+import { cashMovements, expectedCashCounts, purchaseFundingCategory, type CashMovementKind, type SavedCashCount } from '../shared/cash.js';
+import type { PurchaseFunding } from '../shared/admin.js';
 import { type createAccounts, record, ValidationError, whole } from './accounts.js';
 import { activeShiftId, shiftTokenTotals } from './cash-ledger.js';
 import { cashReportFilename, renderCashReport } from './cash-report.js';
@@ -38,6 +39,10 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     '  category TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL',
     ') STRICT;',
     'CREATE INDEX IF NOT EXISTS cash_movements_by_shift ON cash_movements(shift_id, id);',
+    'CREATE TABLE IF NOT EXISTS cash_remote_purchase_funding (',
+    '  movement_id INTEGER PRIMARY KEY REFERENCES cash_movements(id),',
+    '  request_id TEXT NOT NULL UNIQUE, requested_by TEXT NOT NULL, requested_at TEXT NOT NULL',
+    ') STRICT;',
     'CREATE TABLE IF NOT EXISTS cash_inventory_links (',
     '  inventory_movement_id INTEGER PRIMARY KEY REFERENCES inventory_movements(id),',
     '  cash_movement_id INTEGER NOT NULL REFERENCES cash_movements(id)',
@@ -226,6 +231,22 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     ].join(' ')).run(id, kind, amount, movement.sales * amount, movement.purchases * amount, category, reason, new Date().toISOString()).lastInsertRowid);
   }
 
+  function applyRemotePurchaseFunding(funding: PurchaseFunding) {
+    const { id, shift_id, shift_opened_at, amount, note, requested_by, created_at } = funding;
+    return accounts.writeOnce(id, JSON.stringify(['remote-purchase-funding', shift_id, shift_opened_at, amount, note, requested_by, created_at]), () => {
+      const shift = shiftById(shift_id);
+      if (shift.closedAt !== null || Date.parse(String(shift.openedAt)) !== Date.parse(shift_opened_at)) {
+        throw new ValidationError(409, 'Ese turno ya no está abierto en la caja.');
+      }
+      const movementId = recordMovement(shift_id, {
+        kind: 'purchase_in', amount, category: purchaseFundingCategory,
+        reason: note.trim() || 'Efectivo entregado para compras',
+      });
+      database.prepare('INSERT INTO cash_remote_purchase_funding VALUES (?, ?, ?, ?)').run(movementId, id, requested_by, created_at);
+      return movementId;
+    }).id;
+  }
+
   const countRows = database.prepare(`
     SELECT id, sales_counted AS salesCounted, purchases_counted AS purchasesCounted,
       transfer_confirmed AS transferConfirmed, counted_tokens AS countedTokens, created_at AS createdAt, reason
@@ -296,8 +317,10 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     const shift = shiftById(id);
     const movements = database.prepare([
       'SELECT id, kind, amount, category, reason, created_at AS createdAt, sales_delta AS salesDelta, purchases_delta AS purchasesDelta,',
-      '(SELECT COUNT(*) FROM cash_inventory_links WHERE cash_movement_id = cash_movements.id) AS inventoryLinks',
-      'FROM cash_movements WHERE shift_id = ? ORDER BY id DESC',
+      '(SELECT COUNT(*) FROM cash_inventory_links WHERE cash_movement_id = cash_movements.id) AS inventoryLinks,',
+      'remote.requested_at AS remoteRequestedAt',
+      'FROM cash_movements LEFT JOIN cash_remote_purchase_funding remote ON remote.movement_id = cash_movements.id',
+      'WHERE shift_id = ? ORDER BY id DESC',
     ].join(' ')).all(id);
     const payments = database.prepare([
       'SELECT account_payments.id, sale_id AS saleId, a.name, cash, transfer, tokens, token_value AS tokenValue,',
@@ -349,6 +372,11 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
         ].join(' ')).all(id);
         return sendJson(response, 200, purchases);
       }
+      if (request.method === 'GET' && path === '/api/cash/purchase-fund') {
+        const id = activeShiftId(database);
+        const fund = id === null ? null : database.prepare('SELECT COALESCE(SUM(purchases_delta), 0) AS balance FROM cash_movements WHERE shift_id = ?').get(id);
+        return sendJson(response, 200, { shiftId: id, balance: fund?.balance ?? null });
+      }
       if (request.method === 'GET' && path === '/api/cash') {
         const id = activeShiftId(database);
         const recent = database.prepare(shiftSelect + ' WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 30').all();
@@ -369,6 +397,9 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
         const match = /^\/api\/cash\/([1-9]\d*)\/(movements|count|close|opening-tokens)$/.exec(path);
         if (!match || !whole(Number(match[1]), 1, Number.MAX_SAFE_INTEGER)) throw new ValidationError(404, 'Ruta de caja no encontrada.');
         const id = Number(match[1]);
+        if (match[2] === 'movements' && fields.kind === 'purchase_in' && requestOperator(request)?.role !== 'admin') {
+          throw new ValidationError(403, 'El administrador registra el efectivo que entrega para compras.');
+        }
         switch (match[2]) {
           case 'close': action = () => closeShift(id, fields); break;
           case 'count': action = () => recordCount(id, fields); break;
@@ -399,5 +430,5 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     }
   }
 
-  return { handle, adminOverview, verifyRefund };
+  return { handle, adminOverview, verifyRefund, applyRemotePurchaseFunding };
 }

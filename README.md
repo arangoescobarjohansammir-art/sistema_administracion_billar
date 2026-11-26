@@ -32,7 +32,7 @@ En **Personal → Anular abonos**, el administrador puede anular un abono indepe
 
 En **Personal → Corregir cargos de tejo**, el administrador puede trasladar un cargo pendiente del turno abierto a otra cuenta. Selecciona el cliente correcto y registra el motivo. El chico, las fichas entregadas y los productos permanecen registrados tal como se jugaron. Si el cargo tiene un cobro asociado o supera el saldo pendiente, la aplicación bloquea el traslado.
 
-En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. Registra los aportes y pagos del fondo para compras por separado. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, registra primero ambos fondos, las transferencias verificadas y las fichas físicas. Pulsa **Confirmar conteo y revisar** para revelar los valores esperados y las diferencias. Luego indica la base que dejas y explica cualquier diferencia antes de guardar.
+En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. En **Fondo para compras**, el administrador registra el efectivo entregado y la cajera consulta el saldo disponible. Para descontar un pago, usa **Registrar movimiento → Pago desde el fondo para compras**. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, registra el efectivo contado en ambos fondos, las transferencias verificadas y las fichas físicas. Pulsa **Confirmar conteo y revisar** para ver el cuadre. Luego indica la base que dejas y explica cualquier diferencia antes de guardar.
 
 Si necesitas volver a contar, usa **Hacer un recuento** e indica el motivo. El turno y su PDF conservan el primer conteo y los recuentos. Si los movimientos cambian los valores esperados después de revisar, la caja actualiza el cuadre y pide revisarlo antes de guardar.
 
@@ -101,7 +101,7 @@ Cuando necesites continuar la operación con una base recuperada, elige la copia
 
 Abre el [panel móvil del club](https://club-tejo-patio-bonito.pages.dev/) o la [demostración con datos ficticios](https://club-tejo-patio-bonito.pages.dev/?demo=1). También puedes abrir [la demo local](http://127.0.0.1:4173/admin/?demo=1) con la caja iniciada. Puedes cambiar de día, abrir un cierre, consultar las mesas y canchas ocupadas y buscar productos.
 
-El panel real es privado y de solo lectura. Consulta los últimos 30 días de ventas y cobros, los últimos 30 cierres, los saldos pendientes, el inventario activo y la ocupación. Muestra la hora de la última sincronización y avisa si los datos llevan más de tres minutos sin actualizarse. Sigue los [pasos de instalación del panel remoto](docs/panel-admin.md) para conectarlo al proyecto Supabase del club y publicar su enlace HTTPS.
+El panel real es privado. Consulta los últimos 30 días de ventas y cobros, los últimos 30 cierres, los saldos pendientes, el inventario activo y la ocupación. En **Caja → Fondo para compras**, Humberto puede registrar cuánto efectivo entregó a la cajera. El aporte queda pendiente hasta que el computador lo incorpora al turno indicado. Muestra la hora de la última sincronización y avisa si los datos llevan más de tres minutos sin actualizarse. Sigue los [pasos de instalación del panel remoto](docs/panel-admin.md) para conectarlo al proyecto Supabase del club y publicar su enlace HTTPS.
 
 ## Arquitectura
 
@@ -110,7 +110,7 @@ El panel real es privado y de solo lectura. Consulta los últimos 30 días de ve
 | Interfaz de caja | React, Vite y TypeScript | Abrir cuentas, registrar pedidos y operar el cierre desde el navegador del computador. |
 | Aplicación local | Node.js y TypeScript | Servir la interfaz, validar operaciones y guardar los movimientos. |
 | Datos locales | SQLite | Mantener cuentas abiertas, inventario, cobros y cierres aunque no haya internet. |
-| Panel del administrador | React y Supabase | Consultar desde el celular los datos sincronizados. Supabase aloja la copia y gestiona el acceso del administrador. |
+| Panel del administrador | React y Supabase | Consultar datos sincronizados y registrar aportes para compras desde el celular. Supabase aloja la copia y gestiona el acceso del administrador. |
 
 La caja es el origen de los datos. Cuando se configura Supabase, el servidor reemplaza la copia de consulta en segundo plano aproximadamente cada minuto. Si hay un fallo de conexión, vuelve a intentarlo con los datos actuales sin duplicar ventas. Las fotos se guardan en la caja local.
 

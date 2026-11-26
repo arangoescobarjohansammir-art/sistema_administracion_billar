@@ -6,6 +6,7 @@ import { adminSnapshotId, alertPeriodStart, clubDay, clubTimeZone, dashboardRefr
 import { billiardTables } from '../shared/billiard';
 import { courtLabel, tejoCourtsPerType } from '../shared/tejo';
 import { demoSnapshot } from './demo';
+import { PurchaseFund } from './PurchaseFund';
 import clubIcon from '../shared/brand/club-icon.png';
 import './style.css';
 
@@ -173,7 +174,7 @@ function Register({ shift }: { shift: RegisterSummary }) {
   </dl>;
 }
 
-function Cash({ data, focusShift }: { data: AdminSnapshot; focusShift: number | null }) {
+function Cash({ data, focusShift, funding }: { data: AdminSnapshot; focusShift: number | null; funding?: ReactNode }) {
   useEffect(() => {
     if (focusShift !== null) document.querySelector<HTMLElement>('#closure-' + focusShift + ' summary')?.focus();
   }, [focusShift]);
@@ -185,6 +186,7 @@ function Cash({ data, focusShift }: { data: AdminSnapshot; focusShift: number | 
         <Register shift={data.active} />
       </> : <p className="muted">No hay un turno abierto en la última sincronización.</p>}
     </section>
+    {funding}
     <section className="panel">
       <h2>Historial de cierres</h2>
       {data.closures.length === 0 && <p className="muted">Aún no hay cierres registrados.</p>}
@@ -232,7 +234,7 @@ function Inventory({ data }: { data: AdminSnapshot }) {
   </section>;
 }
 
-function Dashboard({ data, updatedAt }: { data: AdminSnapshot; updatedAt?: string }) {
+function Dashboard({ data, updatedAt, funding }: { data: AdminSnapshot; updatedAt?: string; funding?: ReactNode }) {
   const [tab, setTab] = useState<Tab>('Alertas');
   const [focusShift, setFocusShift] = useState<number | null>(null);
   const [time, setTime] = useState(Date.now);
@@ -257,7 +259,7 @@ function Dashboard({ data, updatedAt }: { data: AdminSnapshot; updatedAt?: strin
     {tab === 'Alertas' && <Alerts data={data} openClosure={(id) => { setFocusShift(id); setTab('Caja'); }}
       openInventory={() => setTab('Inventario')} />}
     {tab === 'Ventas' && <Sales data={data} />}
-    {tab === 'Caja' && <Cash data={data} focusShift={focusShift} />}
+    {tab === 'Caja' && <Cash data={data} focusShift={focusShift} funding={funding} />}
     {tab === 'Juegos' && <Games data={data} />}
     {tab === 'Inventario' && <Inventory data={data} />}
   </>;
@@ -343,7 +345,9 @@ function SyncedDashboard({ session }: { session: Session }) {
       {busy ? 'Consultando…' : 'Actualizar'}
     </button></div>
     {status && <p className="status" role="status">{status}</p>}
-    {snapshot && <Dashboard data={snapshot.payload} updatedAt={snapshot.synced_at} />}
+    {snapshot && <Dashboard data={snapshot.payload} updatedAt={snapshot.synced_at}
+      funding={<PurchaseFund client={supabase!} requester={session.user.id} shift={snapshot.payload.active} ready={snapshot.payload.purchaseFundingEnabled === true}
+        formatMoney={money} formatTime={formatTime} refresh={refresh} />} />}
   </>;
 }
 

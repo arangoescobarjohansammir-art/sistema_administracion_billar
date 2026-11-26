@@ -1,3 +1,6 @@
+export const maxPurchaseFunding = 1_000_000_000;
+export const purchaseFundingCategory = 'Aporte del administrador';
+
 export const cashMovements = {
   sales_in: { label: 'Entrada adicional a caja de ventas', sales: 1, purchases: 0 },
   purchase_in: { label: 'Entrega al fondo para compras', sales: 0, purchases: 1 },

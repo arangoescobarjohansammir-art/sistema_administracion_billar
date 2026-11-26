@@ -1,7 +1,8 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-import { adminSnapshotId, alertPeriodStart, clubDay, dashboardRefreshMs, type AdminSnapshot, type RegisterSummary } from '../shared/admin.js';
+import { adminSnapshotId, alertPeriodStart, clubDay, dashboardRefreshMs, type AdminSnapshot,
+  type PurchaseFunding, type PurchaseFundingResult, type RegisterSummary } from '../shared/admin.js';
 import type { createCash } from './cash.js';
-import type { createAccounts } from './accounts.js';
+import { type createAccounts, ValidationError } from './accounts.js';
 
 type Row = Record<string, SQLOutputValue>;
 type Cash = ReturnType<typeof createCash>;
@@ -51,7 +52,7 @@ export function createAdminSnapshot(database: DatabaseSync, cash: Cash, accounts
   }
   const { active, closures, pendingBalance } = cash.adminOverview();
   return {
-    version: 1, day, daily, pendingBalance, openBalances: accounts.openBalances(),
+    version: 1, purchaseFundingEnabled: true, day, daily, pendingBalance, openBalances: accounts.openBalances(),
     active: active && registerSummary(active.shift, active.totals),
     closures: closures.map(({ shift, totals }) => registerSummary(shift, totals)),
     unexpectedWithdrawals: database.prepare(`
@@ -95,10 +96,45 @@ export function startAdminSync(database: DatabaseSync, cash: Cash, accounts: Acc
     return;
   }
 
-  const endpoint = url + '/rest/v1/admin_snapshots?on_conflict=id';
+  const api = url + '/rest/v1/';
+  const endpoint = api + 'admin_snapshots?on_conflict=id';
+  const fundingEndpoint = api + 'purchase_funding';
   const secret = key;
   let failureReported = false;
+  let fundingFailureReported = false;
+
+  async function receiveFunding() {
+    const response = await fetch(fundingEndpoint + '?status=eq.pending&order=created_at.asc,id.asc&limit=50', {
+      headers: { apikey: secret }, signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(String(response.status));
+    const pending: PurchaseFunding[] = await response.json();
+    for (const funding of pending) {
+      let result: PurchaseFundingResult;
+      try {
+        result = { status: 'applied', movement_id: cash.applyRemotePurchaseFunding(funding), result_note: '' };
+      } catch (error) {
+        if (!(error instanceof ValidationError)) throw error;
+        result = { status: 'rejected', movement_id: null, result_note: error.message };
+      }
+      const saved = await fetch(fundingEndpoint + '?id=eq.' + encodeURIComponent(funding.id) + '&status=eq.pending', {
+        method: 'PATCH', headers: { apikey: secret, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ ...result, processed_at: new Date().toISOString() }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!saved.ok) throw new Error(String(saved.status));
+    }
+  }
+
   async function send() {
+    try {
+      await receiveFunding();
+      if (fundingFailureReported) console.info('Recepción de aportes para compras restablecida.');
+      fundingFailureReported = false;
+    } catch {
+      if (!fundingFailureReported) console.warn('No se pudieron sincronizar los aportes para compras. La caja volverá a intentarlo.');
+      fundingFailureReported = true;
+    }
     try {
       const response = await fetch(endpoint, {
         method: 'POST', headers: {

@@ -37,9 +37,11 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   const expense = await post(move, 201, purchase);
   assert.equal((await post(move, 200, purchase)).id, expense.id);
   await post(move, 201, movement('purchase_in', 200_000, 'Dinero entregado por el administrador'));
+  assert.deepEqual(await json('/api/cash/purchase-fund', 200), { shiftId: first.id, balance: 200_000 });
   await post(move, 201, movement('purchase_expense', 80_000, 'Pago al proveedor'));
   await post(move, 201, movement('sales_to_purchases', 5000, 'Traslado temporal'));
   await post(move, 201, movement('purchases_to_sales', 5000, 'Devolución del traslado'));
+  assert.deepEqual(await json('/api/cash/purchase-fund', 200), { shiftId: first.id, balance: 120_000 });
   const references = await json('/api/cash/purchase-references', 200);
   assert.equal(references.length, 2);
   assert.ok(references.some((entry) => entry.id === expense.id));

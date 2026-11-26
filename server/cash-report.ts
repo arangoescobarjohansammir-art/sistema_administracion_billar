@@ -80,6 +80,7 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
     const label = cashMovements[movement.kind as CashMovementKind]?.label ?? text(movement.kind);
     return [date(movement.createdAt) + '\nMov. #' + text(movement.id),
       label + '\n' + text(movement.category) + ': ' + text(movement.reason) +
+      (movement.remoteRequestedAt ? '\nPanel móvil: ' + date(movement.remoteRequestedAt) : '') +
       (inventory.length ? '\nInventario: ' + inventory.join('\n') : ''),
       money(movement.amount), money(movement.salesDelta), money(movement.purchasesDelta)];
   });

@@ -39,6 +39,7 @@ test('identifica al cajero y conserva la venta original al anular su pago, créd
   const shift = await server.openShift();
   const shiftPath = '/api/cash/' + shift.id;
   assert.equal((await json(shiftPath, 200)).shift.cashier, 'Diana Pérez');
+  await post(shiftPath + '/movements', 403, { kind: 'purchase_in', amount: 500000, category: 'Compras', reason: 'Aporte para pruebas' });
   await post('/api/products', 403, { ...productFields, name: 'Producto nuevo' });
   await json(productPath, 403, 'PUT', { ...productFields, price: 1000 });
   await json(productPath, 403, 'PUT', { ...productFields, active: false });

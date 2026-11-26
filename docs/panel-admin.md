@@ -3,7 +3,7 @@
 ## 1. Configurar Supabase
 
 1. Usa un proyecto de Supabase para el club, con la Data API activa y el esquema `public` expuesto.
-2. En **SQL Editor**, ejecuta una vez la [migración del panel](../supabase/migrations/202611240001_admin_panel.sql). Crea la tabla de sincronización y sus permisos.
+2. En **SQL Editor**, ejecuta una vez la [migración del panel](../supabase/migrations/202611240001_admin_panel.sql) y después la [migración del fondo para compras](../supabase/migrations/202611250001_purchase_funding.sql). Si el panel ya funciona, aplica únicamente la segunda migración. Las dos usan políticas de acceso RLS.
 3. En **Authentication → Users**, crea o elige el usuario de Humberto con correo y contraseña confirmados. Copia su UUID. En **SQL Editor**, asigna el acceso al panel usando su UUID:
 
    ```sql
@@ -40,6 +40,8 @@ El proyecto del club está publicado en [Cloudflare Pages](https://club-tejo-pat
 Para publicar la demo en GitHub Pages, abre **Settings → Pages** en un repositorio donde esté disponible y elige **GitHub Actions** como origen. Luego abre **Actions → Publicar demo móvil → Run workflow** en `main`. [Configurar GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
 El sitio se puede abrir desde cualquier red con internet. Si el computador se apaga o pierde conexión, el panel conserva en Supabase la última copia disponible con su fecha y hora. La caja se ejecuta en el computador del local y sigue siendo la fuente de los datos.
+
+En **Caja → Fondo para compras**, escribe el importe del efectivo ya entregado, confirma y pulsa **Enviar aporte a caja**. Queda **Pendiente de sincronizar** hasta que el computador lo procese. Con conexión suele tomar alrededor de un minuto. Cuando aparece **Aplicado en caja**, la cajera verá el importe sumado al fondo y el detalle quedará en los movimientos del turno. Si el turno se cerró antes de recibir el aporte, el panel muestra **Rechazado por la caja**. Regístralo en el turno correcto si el efectivo se entregó para ese turno. Cada envío se aplica una sola vez aunque se pierda la conexión al confirmar.
 
 Al iniciar, **Alertas** muestra los cierres con diferencias y los retiros imprevistos de los últimos siete días registrados, además de los productos activos agotados. Los retiros incluyen compras imprevistas y otros retiros de la caja de ventas. Cuando la última copia tiene tres minutos o más, el panel muestra **Sincronización atrasada** junto con la fecha y la hora de esa copia.
 

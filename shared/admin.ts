@@ -3,6 +3,22 @@ export const dashboardRefreshMs = 60_000;
 export const clubTimeZone = 'America/Bogota';
 export const syncWarningMs = 3 * dashboardRefreshMs;
 
+export type PurchaseFunding = {
+  id: string;
+  shift_id: number;
+  shift_opened_at: string;
+  amount: number;
+  note: string;
+  requested_by: string;
+  created_at: string;
+};
+
+export type PurchaseFundingResult = {
+  status: 'applied' | 'rejected';
+  movement_id: number | null;
+  result_note: string;
+};
+
 export type UnexpectedWithdrawal = {
   id: number; shiftId: number; kind: 'sales_expense' | 'sales_withdrawal';
   amount: number; category: string; reason: string; createdAt: string;
@@ -24,6 +40,7 @@ export type RegisterSummary = {
 
 export type AdminSnapshot = {
   version: 1;
+  purchaseFundingEnabled?: true;
   day: string;
   daily: DailySales[];
   active: RegisterSummary | null;

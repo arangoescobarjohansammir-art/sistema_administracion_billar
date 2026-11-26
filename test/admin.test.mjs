@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { createAccounts } from '../dist/server/accounts.js';
@@ -73,7 +74,7 @@ test('resume ventas y cobros por día colombiano y conserva el cierre guardado',
   assert.deepEqual(snapshot.play, { billiard: [{ table: 2, paused: true }], tejo: [{ type: 'largo', court: 4, rounds: 1 }] });
 });
 
-test('reintenta con la caja actual y reemplaza la misma copia al volver la conexión', async (t) => {
+test('sincroniza aportes una vez incluso si se pierde la confirmación y conserva la copia de caja', async (t) => {
   const { database, cash, accounts } = databaseFixture(t);
   const env = { ...process.env };
   t.after(() => {
@@ -84,8 +85,17 @@ test('reintenta con la caja actual y reemplaza la misma copia al volver la conex
   });
   process.env.CAJA_SUPABASE_URL = 'https://patio-bonito-test.supabase.co';
   process.env.CAJA_SUPABASE_SECRET_KEY = 'sb_secret_ficticia';
-  const calls = [];
+  const openedAt = new Date().toISOString();
+  database.prepare("INSERT INTO cash_shifts (id, cashier, opened_at, opening_base, opening_note, opening_tokens) VALUES (1, 'Caja de prueba', ?, 100000, '', 100)").run(openedAt);
+  const funding = {
+    id: randomUUID(), shift_id: 1, shift_opened_at: openedAt,
+    amount: 500000, note: 'Pedido del proveedor', created_at: openedAt, requested_by: randomUUID(),
+  };
+  const oldFunding = { ...funding, id: randomUUID(), shift_opened_at: '2026-10-01T12:00:00Z' };
+  const snapshots = [];
+  const receipts = [];
   const retries = [];
+  let online = false;
   const timers = t.mock.method(globalThis, 'setTimeout', (callback, delay) => {
     retries.push(callback);
     assert.equal(delay, dashboardRefreshMs);
@@ -94,24 +104,47 @@ test('reintenta con la caja actual y reemplaza la misma copia al volver la conex
   t.mock.method(console, 'warn', () => {});
   t.mock.method(console, 'info', () => {});
   t.mock.method(globalThis, 'fetch', async (url, options) => {
-    calls.push({ url, options, body: JSON.parse(options.body) });
-    if (calls.length === 1) throw new Error('Sin internet');
-    return { ok: true };
+    if (url.includes('/admin_snapshots?')) {
+      snapshots.push({ url, options, body: JSON.parse(options.body) });
+      if (!online) throw new Error('Sin internet');
+      return { ok: true };
+    }
+    if (!online) throw new Error('Sin internet');
+    if (options.method !== 'PATCH') return { ok: true, json: async () => [funding, oldFunding] };
+    receipts.push({ url, ...JSON.parse(options.body) });
+    return { ok: receipts.length > 1 };
   });
 
   startAdminSync(database, cash, accounts);
   await new Promise(setImmediate);
   assert.equal(retries.length, 1);
+  assert.equal(receipts.length, 0);
+  assert.equal(cash.adminOverview().active.totals.purchasesExpected, 0);
   database.exec("INSERT INTO sales (total, created_at) VALUES (4000, '" + new Date().toISOString() + "')");
+  online = true;
   retries.shift()();
   await new Promise(setImmediate);
-  assert.equal(calls.length, 2);
-  assert.equal(timers.mock.callCount(), 2);
-  assert.equal(calls[0].body.id, calls[1].body.id);
-  assert.equal(calls[0].body.payload.daily.at(-1).sales, 0);
-  assert.equal(calls[1].body.payload.daily.at(-1).sales, 4000);
-  assert.equal(calls[1].url, 'https://patio-bonito-test.supabase.co/rest/v1/admin_snapshots?on_conflict=id');
-  assert.equal(calls[1].options.headers.Prefer, 'resolution=merge-duplicates,return=minimal');
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].status, 'applied');
+  retries.shift()();
+  await new Promise(setImmediate);
+  assert.equal(receipts.length, 3);
+  assert.equal(receipts[1].movement_id, receipts[0].movement_id);
+  assert.match(receipts[1].url, new RegExp(funding.id));
+  assert.equal(receipts[2].status, 'rejected');
+  assert.match(receipts[2].url, new RegExp(oldFunding.id));
+  assert.equal(database.prepare('SELECT count(*) AS count FROM cash_movements').get().count, 1);
+  assert.equal(database.prepare('SELECT requested_by AS actor FROM cash_remote_purchase_funding').get().actor, funding.requested_by);
+  assert.equal(snapshots.length, 3);
+  assert.equal(timers.mock.callCount(), 3);
+  assert.equal(snapshots[0].body.id, snapshots[2].body.id);
+  assert.equal(snapshots[0].body.payload.daily.at(-1).sales, 0);
+  const current = snapshots[2].body.payload;
+  assert.equal(current.daily.at(-1).sales, 4000);
+  assert.equal(current.active.purchasesExpected, 500000);
+  assert.equal(current.active.salesExpected, 100000);
+  assert.equal(snapshots[2].url, 'https://patio-bonito-test.supabase.co/rest/v1/admin_snapshots?on_conflict=id');
+  assert.equal(snapshots[2].options.headers.Prefer, 'resolution=merge-duplicates,return=minimal');
 });
 
 test('sirve el panel móvil como aplicación independiente de la API de caja', async (t) => {

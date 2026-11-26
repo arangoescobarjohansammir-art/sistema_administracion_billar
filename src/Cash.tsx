@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { cashMovements, expectedCashCounts, type CashMovementKind, type SavedCashCount } from '../shared/cash';
+import { cashMovements, expectedCashCounts, maxPurchaseFunding, purchaseFundingCategory, type CashMovementKind, type SavedCashCount } from '../shared/cash';
 import { api, message, money, useOperation } from './Accounts';
 import { BillCounter } from './CashTools';
 import { CashBackups } from './CashBackups';
@@ -20,6 +20,7 @@ type Totals = {
 };
 type Movement = {
   id: number; kind: CashMovementKind; amount: number; category: string; reason: string; createdAt: string; inventoryLinks: number;
+  remoteRequestedAt: string | null;
 };
 type Payment = {
   id: number; saleId: number | null; name: string | null; cash: number; transfer: number;
@@ -105,7 +106,8 @@ function MovementForm({ id, locked, act }: { id: number; locked: boolean; act: A
       <h3>Registrar movimiento</h3>
       <fieldset className="field-grid" disabled={locked}>
         <label className="wide">Tipo de movimiento<select name="kind" defaultValue="sales_expense">
-          {Object.entries(cashMovements).map(([kind, movement]) => <option key={kind} value={kind}>{movement.label}</option>)}
+          {Object.entries(cashMovements).filter(([kind]) => kind !== 'purchase_in')
+            .map(([kind, movement]) => <option key={kind} value={kind}>{movement.label}</option>)}
         </select></label>
         <label>Importe (COP)<input name="amount" type="number" min={1} max={1_000_000_000} step={1} required /></label>
         <label>Categoría<input name="category" placeholder="Ej. Cerveza" maxLength={80} required /></label>
@@ -114,6 +116,52 @@ function MovementForm({ id, locked, act }: { id: number; locked: boolean; act: A
       <button disabled={locked}>Guardar movimiento</button>
     </form>
   );
+}
+
+function PurchaseFund({ id, expected, admin, locked, act }: {
+  id: number; expected: number; admin: boolean; locked: boolean; act: Action;
+}) {
+  const [balance, setBalance] = useState<number | null>(null);
+  useEffect(() => {
+    let current = true;
+    let timer: number;
+    setBalance(null);
+    async function refresh() {
+      try {
+        const fund = await api<{ shiftId: number | null; balance: number | null }>('cash/purchase-fund');
+        if (current && fund.shiftId === id) setBalance(fund.balance);
+      } catch {
+        // Keep showing the latest confirmed balance and try again.
+      } finally {
+        if (current) timer = window.setTimeout(() => void refresh(), 10_000);
+      }
+    }
+    void refresh();
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [id, expected]);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (locked) return;
+    const form = event.currentTarget;
+    const fields = new FormData(form);
+    if (await act('cash/' + id + '/movements', {
+      kind: 'purchase_in', category: purchaseFundingCategory, amount: Number(fields.get('amount')),
+      reason: String(fields.get('note') ?? '').trim() || 'Efectivo entregado para compras',
+    }, 'Aporte registrado en el fondo para compras.')) form.reset();
+  }
+  return <section aria-labelledby="purchase-fund-title">
+    <h3 id="purchase-fund-title">Fondo para compras</h3>
+    <p>Disponible según caja · <strong>{money.format(balance ?? expected)}</strong></p>
+    {admin && <form onSubmit={save}>
+      <fieldset className="field-grid" disabled={locked}>
+        <label>Efectivo que dejaste para compras (COP)<input name="amount" type="number" inputMode="numeric"
+          min={1} max={maxPurchaseFunding} step={1} required /></label>
+        <label>Nota (opcional)<input name="note" maxLength={300} placeholder="Ej. Pedido de cerveza" /></label>
+      </fieldset>
+      <button disabled={locked}>Agregar al fondo para compras</button>
+    </form>}
+  </section>;
 }
 
 function Difference({ value, tokens = false }: { value: number | null; tokens?: boolean }) {
@@ -242,7 +290,7 @@ function ReviewClose({ detail, count, locked, act, recount }: {
   </form>;
 }
 
-function ActiveShift({ detail, locked, act }: { detail: Detail; locked: boolean; act: Action }) {
+function ActiveShift({ detail, admin, locked, act, refresh }: { detail: Detail; admin: boolean; locked: boolean; act: Action; refresh: () => void }) {
   const [recountFor, setRecountFor] = useState<number | null>(null);
   const { shift } = detail;
   const count = detail.counts.at(-1);
@@ -252,17 +300,17 @@ function ActiveShift({ detail, locked, act }: { detail: Detail; locked: boolean;
       <h3>Turno #{shift.id} · {shift.cashier}</h3>
       <span>Abierto {date.format(new Date(shift.openedAt))}</span>
     </section>
+    <PurchaseFund id={shift.id} expected={detail.totals.purchasesExpected} admin={admin} locked={locked} act={act} />
     {shift.openingTokens === null ? <RecoverOpeningTokens id={shift.id} locked={locked} act={act} />
       : !count || recount ? <CountForm key={count?.id ?? 'primer-conteo'} id={shift.id} previous={count} locked={locked} act={act}
         cancel={count && (() => setRecountFor(null))} />
-        : <>
-          <ReviewClose key={count.id} detail={detail} count={count} locked={locked} act={act} recount={() => setRecountFor(count.id)} />
-          <details className="count-history">
-            <summary>Ver movimientos y cobros del turno</summary>
-            <Ledger detail={detail} />
-          </details>
-        </>}
+        : <ReviewClose key={count.id} detail={detail} count={count} locked={locked} act={act} recount={() => setRecountFor(count.id)} />}
     <MovementForm id={shift.id} locked={locked} act={act} />
+    <details className="count-history" onToggle={(event) => { if (event.currentTarget.open) refresh(); }}>
+      <summary>{count ? 'Ver movimientos y cobros del turno' : 'Ver movimientos del turno'}</summary>
+      <button type="button" className="secondary" disabled={locked} onClick={refresh}>Actualizar movimientos</button>
+      <Ledger detail={detail} showPayments={Boolean(count)} />
+    </details>
   </div>;
 }
 
@@ -319,7 +367,7 @@ function ShiftSummary({ detail }: { detail: Detail }) {
   );
 }
 
-function Ledger({ detail }: { detail: Detail }) {
+function Ledger({ detail, showPayments = true }: { detail: Detail; showPayments?: boolean }) {
   return (
     <div className="ledger-columns">
       <section>
@@ -329,11 +377,12 @@ function Ledger({ detail }: { detail: Detail }) {
             <div className="row-between"><strong>{cashMovements[movement.kind].label}</strong><strong>{money.format(movement.amount)}</strong></div>
             <time dateTime={movement.createdAt}>{date.format(new Date(movement.createdAt))}</time>
             <p>#{movement.id} · {movement.category} · {movement.reason}</p>
+            {movement.remoteRequestedAt && <p>Enviado desde el panel móvil · {date.format(new Date(movement.remoteRequestedAt))}</p>}
             {movement.inventoryLinks > 0 && <p>{movement.inventoryLinks} {movement.inventoryLinks === 1 ? 'entrada vinculada' : 'entradas vinculadas'} de inventario</p>}
           </li>
         ))}</ul>}
       </section>
-      <section>
+      {showPayments && <section>
         <h4>Cobros y transferencias para verificar</h4>
         {!detail.payments.length ? <p>Sin cobros registrados.</p> : <ul className="ledger-list">{detail.payments.map((payment) => (
           <li key={payment.id}>
@@ -349,12 +398,12 @@ function Ledger({ detail }: { detail: Detail }) {
             {payment.voidReason && <p>Motivo de anulación · {payment.voidReason}</p>}
           </li>
         ))}</ul>}
-      </section>
+      </section>}
     </div>
   );
 }
 
-export function Cash({ operatorName, onShiftChange }: { operatorName: string; onShiftChange: (open: boolean) => void }) {
+export function Cash({ operatorName, admin, onShiftChange }: { operatorName: string; admin: boolean; onShiftChange: (open: boolean) => void }) {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [history, setHistory] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -434,7 +483,7 @@ export function Cash({ operatorName, onShiftChange }: { operatorName: string; on
       {status && <p role="status">{status}</p>}
       {!dashboard && !loadError && <p role="status">Cargando caja…</p>}
       {dashboard && view === 'active' && (dashboard.active ? (
-        <ActiveShift key={dashboard.active.shift.id} detail={dashboard.active} locked={locked} act={act} />
+        <ActiveShift key={dashboard.active.shift.id} detail={dashboard.active} admin={admin} locked={locked} act={act} refresh={() => void load()} />
       ) : <Opening operatorName={operatorName} previousBase={dashboard.previousBase} previousTokens={dashboard.previousTokens}
         key={dashboard.recent[0]?.id ?? 'first'} locked={locked} act={act} />)}
       {dashboard && view === 'history' && <>

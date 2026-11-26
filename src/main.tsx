@@ -162,7 +162,7 @@ function App({ operator, onLogout }: { operator: Operator; onLogout: () => void 
         {section === 'accounts' && <Accounts />}
         {section === 'billiards' && <Billiards />}
         {section === 'tejo' && <Tejo />}
-        {section === 'cash' && <Cash operatorName={operator.name} onShiftChange={setCashOpen} />}
+        {section === 'cash' && <Cash operatorName={operator.name} admin={operator.role === 'admin'} onShiftChange={setCashOpen} />}
         {section === 'note' && <LocalNoteForm />}
         {section === 'staff' && operator.role === 'admin' && <Staff />}
       </main>
