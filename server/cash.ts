@@ -40,6 +40,20 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     '  category TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL',
     ') STRICT;',
     'CREATE INDEX IF NOT EXISTS cash_movements_by_shift ON cash_movements(shift_id, id);',
+    'CREATE TABLE IF NOT EXISTS cash_staff_payment_corrections (',
+    '  payment_id INTEGER PRIMARY KEY REFERENCES cash_movements(id),',
+    '  amount INTEGER NOT NULL CHECK (amount BETWEEN 0 AND 1000000000),',
+    '  compensation_id INTEGER UNIQUE REFERENCES cash_movements(id), created_at TEXT NOT NULL, reason TEXT NOT NULL',
+    ') STRICT;',
+    'CREATE VIEW IF NOT EXISTS effective_cash_movements AS',
+    'SELECT m.id, m.shift_id, m.kind, m.category, m.reason, m.created_at, m.purchases_delta, m.amount AS original_amount,',
+    '  CASE WHEN linked.payment_id IS NOT NULL THEN 0 ELSE COALESCE(correction.amount, m.amount) END AS amount,',
+    '  CASE WHEN linked.payment_id IS NOT NULL THEN 0 ELSE COALESCE(-correction.amount, m.sales_delta) END AS sales_delta,',
+    '  COALESCE(correction.created_at, linked.created_at) AS corrected_at,',
+    '  COALESCE(correction.reason, linked.reason) AS correction_reason,',
+    '  correction.compensation_id, linked.payment_id AS compensates_payment_id',
+    'FROM cash_movements m LEFT JOIN cash_staff_payment_corrections correction ON correction.payment_id = m.id',
+    'LEFT JOIN cash_staff_payment_corrections linked ON linked.compensation_id = m.id;',
     'CREATE TABLE IF NOT EXISTS cash_remote_purchase_funding (',
     '  movement_id INTEGER PRIMARY KEY REFERENCES cash_movements(id),',
     '  request_id TEXT NOT NULL UNIQUE, requested_by TEXT NOT NULL, requested_at TEXT NOT NULL',
@@ -169,7 +183,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     ].join(' ')).get(id);
     const movement = database.prepare([
       'SELECT COALESCE(SUM(sales_delta), 0) AS sales, COALESCE(SUM(purchases_delta), 0) AS purchases',
-      'FROM cash_movements WHERE shift_id = ?',
+      'FROM effective_cash_movements WHERE shift_id = ?',
     ].join(' ')).get(id);
     const salesExpected = shift.salesExpected ?? (Number(shift.openingBase) + Number(payment?.cash) + Number(movement?.sales));
     const purchasesExpected = shift.purchasesExpected ?? Number(movement?.purchases);
@@ -329,9 +343,11 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     const shift = shiftById(id);
     const movements = database.prepare([
       'SELECT id, kind, amount, category, reason, created_at AS createdAt, sales_delta AS salesDelta, purchases_delta AS purchasesDelta,',
-      '(SELECT COUNT(*) FROM cash_inventory_links WHERE cash_movement_id = cash_movements.id) AS inventoryLinks,',
+      'original_amount AS originalAmount, corrected_at AS correctedAt, correction_reason AS correctionReason,',
+      'compensation_id AS compensationId, compensates_payment_id AS compensatesPaymentId,',
+      '(SELECT COUNT(*) FROM cash_inventory_links WHERE cash_movement_id = effective_cash_movements.id) AS inventoryLinks,',
       'remote.requested_at AS remoteRequestedAt',
-      'FROM cash_movements LEFT JOIN cash_remote_purchase_funding remote ON remote.movement_id = cash_movements.id',
+      'FROM effective_cash_movements LEFT JOIN cash_remote_purchase_funding remote ON remote.movement_id = effective_cash_movements.id',
       'WHERE shift_id = ? ORDER BY id DESC',
     ].join(' ')).all(id);
     const payments = database.prepare([

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { cashMovements, expectedCashCounts, maxPurchaseFunding, purchaseFundingCategory, type CashMovementKind, type SavedCashCount } from '../shared/cash';
+import { cashMovementCorrectionText, cashMovements, expectedCashCounts, maxPurchaseFunding, purchaseFundingCategory,
+  type CashMovementCorrection, type CashMovementKind, type SavedCashCount } from '../shared/cash';
 import { api, message, money, useOperation } from './Accounts';
 import { BillCounter } from './CashTools';
 import { CashBackups } from './CashBackups';
@@ -19,7 +20,7 @@ type Totals = {
   salesDifference: number | null; purchasesDifference: number | null; transferDifference: number | null;
   salesDelivery: number | null; purchasesDelivery: number | null;
 };
-type Movement = {
+type Movement = CashMovementCorrection & {
   id: number; kind: CashMovementKind; amount: number; category: string; reason: string; createdAt: string; inventoryLinks: number;
   remoteRequestedAt: string | null;
 };
@@ -398,6 +399,7 @@ function Ledger({ detail, showPayments = true }: { detail: Detail; showPayments?
             <div className="row-between"><strong>{cashMovements[movement.kind].label}</strong><strong>{money.format(movement.amount)}</strong></div>
             <time dateTime={movement.createdAt}>{date.format(new Date(movement.createdAt))}</time>
             <p>#{movement.id} · {movement.category} · {movement.reason}</p>
+            {movement.correctedAt && <p>Corregido el {date.format(new Date(movement.correctedAt))} · {cashMovementCorrectionText(movement, money.format)}</p>}
             {movement.remoteRequestedAt && <p>Enviado desde el panel móvil · {date.format(new Date(movement.remoteRequestedAt))}</p>}
             {movement.inventoryLinks > 0 && <p>{movement.inventoryLinks} {movement.inventoryLinks === 1 ? 'entrada vinculada' : 'entradas vinculadas'} de inventario</p>}
           </li>

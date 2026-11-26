@@ -83,3 +83,60 @@ test('descuenta el pago diario solo de ventas y lo muestra por empleado en los r
   const audit = await server.json('/api/audit', 200);
   assert.ok(audit.some(({ kind, reason }) => kind === 'cash_movement' && reason.includes('Pago diario al personal')));
 });
+
+test('corrige un pago al personal y vincula su compensación una sola vez', async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  const { id } = await server.openShift(100000, 100);
+  const cash = '/api/cash/' + id;
+  const page = '/api/corrections/staff-payments';
+  const post = (url, status, fields) => server.json(url, status, 'POST', { requestId: randomUUID(), ...fields });
+  const staff = (amount) => ({ kind: 'staff_payment', amount, category: 'Ana de prueba', reason: 'Pago de jornada' });
+  const payment = await post(cash + '/movements', 201, staff(50000));
+  const compensation = await post(cash + '/movements', 201, {
+    kind: 'sales_in', amount: 45000, category: 'Compensación', reason: 'Error al digitar el pago',
+  });
+  const action = page + '/' + payment.id + '/adjust';
+  const input = { requestId: randomUUID(), amount: 5000, compensationId: compensation.id,
+    reason: 'El importe real fue cinco mil', confirmed: true };
+  const before = await server.json(cash, 200);
+  assert.equal(before.totals.salesExpected, 95000);
+  const counted = await server.recordCashCount(id, { salesCounted: 95000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 100 });
+  const operator = { username: 'cajera', secret: '128462' };
+  await post('/api/operators', 201, { ...operator, name: 'Cajera ficticia' });
+  await server.signIn('login', operator, 200);
+  await server.json(page, 403);
+  await post(action, 403, input);
+  await server.signIn('login', { username: 'admin-prueba', secret: 'clave-ficticia-2026' }, 200);
+  await post(action, 409, { ...input, amount: 6000 });
+  await post(action, 201, input);
+  await post(action, 200, input);
+  await post(action, 409, { ...input, requestId: randomUUID() });
+  const after = await server.json(cash, 200);
+  assert.equal(after.totals.salesExpected, 95000);
+  assert.equal(after.requiresRecount, true);
+  assert.deepEqual(after.movements.map((row) => [row.amount, row.salesDelta, row.originalAmount]),
+    [[0, 0, 45000], [5000, -5000, 50000]]);
+  assert.equal(after.movements[0].compensatesPaymentId, payment.id);
+  assert.equal(after.movements[1].correctionReason, input.reason);
+  assert.equal((await server.json(page, 200)).compensations.length, 0);
+
+  const unpaid = await post(cash + '/movements', 201, staff(10000));
+  await post(page + '/' + unpaid.id + '/adjust', 201, { amount: 0, compensationId: null, reason: 'Nunca se entregó', confirmed: true });
+  assert.equal((await server.json(cash, 200)).totals.salesExpected, 95000);
+  const month = colombianDay.format(new Date()).slice(0, 7);
+  const data = await server.json('/api/reports?kind=month&anchor=' + month, 200);
+  const report = accountingReport(data, accountingPeriod('month', month));
+  assert.equal(Object.fromEntries(accountingTotals(report))['Pagos diarios al personal'], accountingMoney(5000));
+  assert.deepEqual(accountingTables(report).find(({ title }) => title === 'Pagos diarios por empleado').rows,
+    [['Ana de prueba', '1', accountingMoney(5000)]]);
+  const audit = await server.json('/api/audit', 200);
+  assert.ok(audit.some(({ kind, actorName, targetId }) => kind === 'staff_payment_correction' &&
+    actorName === 'Administrador de prueba' && targetId === payment.id));
+  const finalCount = await server.recordCashCount(id, { salesCounted: 95000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 100 },
+    counted.countId, 'Pago corregido');
+  await post(cash + '/close', 201, { ...finalCount, nextBase: 90000, note: '' });
+  await post(action, 409, { ...input, requestId: randomUUID() });
+  assert.equal((await server.fetch(cash + '/report.pdf')).status, 200);
+});

@@ -46,6 +46,8 @@ En **Reportes** el administrador puede elegir una semana de lunes a domingo o un
 
 En **Caja → Registrar movimiento → Pago diario al personal**, registra el nombre del empleado y el efectivo entregado. El pago se descuenta de la caja de ventas y aparece en el informe del turno. **Reportes** muestra el total del periodo, el detalle de cada pago y cuánto recibió cada empleado.
 
+En **Personal → Corregir pagos al personal**, Humberto puede indicar el importe real de un pago del turno abierto. Si ya se registró una entrada de efectivo por la diferencia para compensar el error, selecciona esa entrada. El informe conserva ambos registros y el motivo, y aplica una sola vez el ajuste al efectivo.
+
 ## Ejecutar en el computador
 
 ### Inicio automático en el PC de caja con Windows

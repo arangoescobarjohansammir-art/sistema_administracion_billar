@@ -1,4 +1,4 @@
-import { cashMovements, type CashMovementKind } from './cash.js';
+import { cashMovementCorrectionText, cashMovements, type CashMovementKind } from './cash.js';
 import type { AccountingReport } from './accounting.js';
 
 const number = new Intl.NumberFormat('es-CO');
@@ -66,7 +66,7 @@ export type AccountingTable = {
 export function accountingTables(report: AccountingReport): AccountingTable[] {
   const staff = new Map<string, { name: string; payments: number; total: number }>();
   for (const movement of report.movements) {
-    if (movement.kind !== 'staff_payment') continue;
+    if (movement.kind !== 'staff_payment' || movement.amount === 0) continue;
     const key = movement.category.toLocaleLowerCase('es-CO').replace(/\s+/g, ' ');
     const entry = staff.get(key) ?? { name: movement.category, payments: 0, total: 0 };
     entry.payments++;
@@ -116,7 +116,8 @@ export function accountingTables(report: AccountingReport): AccountingTable[] {
       widths: [107, 185, 76, 76, 76], right: [2, 3, 4],
       rows: report.movements.map((row) => [
         accountingDate(row.date) + '\nMov. #' + row.id + ' · turno #' + row.shiftId,
-        (cashMovements[row.kind as CashMovementKind]?.label ?? row.kind) + '\n' + row.category + ' · ' + row.reason,
+        (cashMovements[row.kind as CashMovementKind]?.label ?? row.kind) + '\n' + row.category + ' · ' + row.reason +
+          (row.correctedAt ? '\nCorregido el ' + accountingDate(row.correctedAt) + '\n' + cashMovementCorrectionText(row, accountingMoney) : ''),
         accountingMoney(row.amount), accountingMoney(row.salesDelta), accountingMoney(row.purchasesDelta),
       ]),
     },

@@ -16,6 +16,7 @@ export function installCashReconciliation(database: DatabaseSync) {
     // Track each change separately. An entry and its reversal can leave the same expected totals.
     const tracked = [
       ['cash_movements', 'NEW.shift_id', 'NEW.sales_delta <> 0 OR NEW.purchases_delta <> 0'],
+      ['cash_staff_payment_corrections', '(SELECT shift_id FROM cash_movements WHERE id = NEW.payment_id)', '1'],
       ['cash_shift_payments', 'NEW.shift_id', '1'],
       ['cash_shift_redemptions', 'NEW.shift_id', 'EXISTS (SELECT 1 FROM tejo_redemptions WHERE id = NEW.redemption_id AND tokens > 0)'],
       ['tejo_redemption_voids', '(SELECT shift_id FROM cash_shift_redemptions WHERE redemption_id = NEW.redemption_id)', '1'],

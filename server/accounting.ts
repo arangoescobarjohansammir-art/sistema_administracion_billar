@@ -72,8 +72,10 @@ export function readAccounting(database: DatabaseSync, range: AccountingRange, n
 
   const movements = database.prepare(`
     SELECT id, shift_id AS shiftId, created_at AS date, kind, category, reason, amount,
-      sales_delta AS salesDelta, purchases_delta AS purchasesDelta
-    FROM cash_movements WHERE created_at >= ? AND created_at < ? ORDER BY created_at, id
+      sales_delta AS salesDelta, purchases_delta AS purchasesDelta, original_amount AS originalAmount,
+      corrected_at AS correctedAt, correction_reason AS correctionReason, compensation_id AS compensationId,
+      compensates_payment_id AS compensatesPaymentId
+    FROM effective_cash_movements WHERE created_at >= ? AND created_at < ? ORDER BY created_at, id
   `).all(start, cutoff) as unknown as AccountingMovement[];
   const closes = database.prepare(`
     SELECT id, cashier, closed_at AS date, closing_note AS note, opening_base AS openingBase, next_base AS nextBase,

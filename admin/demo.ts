@@ -39,7 +39,11 @@ export function demoSnapshot(now = new Date()): AdminSnapshot {
         { id: 1, shiftId: 17, date: closures[0].closedAt!, kind: 'purchase_in', category: 'Compras',
           reason: 'Pedido de cerveza y gaseosas', amount: 40_000, salesDelta: 0, purchasesDelta: 40_000 },
         { id: 2, shiftId: 17, date: closures[0].closedAt!, kind: 'staff_payment', category: 'Empleado ficticio',
-          reason: 'Pago de jornada', amount: 50_000, salesDelta: -50_000, purchasesDelta: 0 },
+          reason: 'Pago de jornada', amount: 5_000, salesDelta: -5_000, purchasesDelta: 0,
+          originalAmount: 50_000, correctedAt: closures[0].closedAt!, correctionReason: 'Error al escribir el importe', compensationId: 3 },
+        { id: 3, shiftId: 17, date: closures[0].closedAt!, kind: 'sales_in', category: 'Ajuste de ejemplo',
+          reason: 'Entrada usada para compensar el error', amount: 0, salesDelta: 0, purchasesDelta: 0,
+          originalAmount: 45_000, correctedAt: closures[0].closedAt!, compensatesPaymentId: 2 },
       ],
       closes: closures.map((entry) => ({
         id: entry.id, cashier: entry.cashier, date: entry.closedAt!, note: entry.closingNote, openingBase: 100_000, nextBase: entry.nextBase,

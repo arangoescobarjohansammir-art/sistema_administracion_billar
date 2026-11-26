@@ -8,6 +8,7 @@ export const auditLabels = {
   account_payment_void: 'Anulación de abono',
   tejo_charge_move: 'Cambio de cuenta de un chico',
   cash_movement: 'Movimiento de caja',
+  staff_payment_correction: 'Corrección de pago al personal',
   inventory_movement: 'Ajuste de inventario',
   inventory_count: 'Conteo físico',
   inventory_count_adjustment: 'Ajuste por conteo físico',

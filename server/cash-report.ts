@@ -1,10 +1,10 @@
 import PDFDocument from 'pdfkit';
 import type { DatabaseSync } from 'node:sqlite';
-import { cashMovements, type CashMovementKind, type SavedCashCount } from '../shared/cash.js';
+import { cashMovementCorrectionText, cashMovements, type CashMovementCorrection, type CashMovementKind, type SavedCashCount } from '../shared/cash.js';
 
 type RecordRow = Record<string, unknown>;
 type ReportData = {
-  shift: RecordRow; totals: RecordRow; movements: RecordRow[]; payments: RecordRow[]; counts: SavedCashCount[];
+  shift: RecordRow; totals: RecordRow; movements: (RecordRow & CashMovementCorrection)[]; payments: RecordRow[]; counts: SavedCashCount[];
 };
 type Column = { label: string; width: number; right?: boolean };
 type DetailTable = { title: string; columns: Column[]; rows: string[][] };
@@ -80,6 +80,7 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
     const label = cashMovements[movement.kind as CashMovementKind]?.label ?? text(movement.kind);
     return [date(movement.createdAt) + '\nMov. #' + text(movement.id),
       label + '\n' + text(movement.category) + ': ' + text(movement.reason) +
+      (movement.correctedAt ? '\nCorregido el ' + date(movement.correctedAt) + '\n' + cashMovementCorrectionText(movement, money) : '') +
       (movement.remoteRequestedAt ? '\nPanel móvil: ' + date(movement.remoteRequestedAt) : '') +
       (inventory.length ? '\nInventario: ' + inventory.join('\n') : ''),
       money(movement.amount), money(movement.salesDelta), money(movement.purchasesDelta)];

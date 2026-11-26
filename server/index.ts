@@ -14,6 +14,7 @@ import { createOperators } from './operators.js';
 import { createAudit } from './audit.js';
 import { createSaleCorrections } from './sale-corrections.js';
 import { createAccountCorrections } from './account-corrections.js';
+import { createStaffPaymentCorrections } from './staff-payment-corrections.js';
 import { createInventoryCounts } from './inventory-counts.js';
 import { readJson, sendJson } from './http.js';
 import { accountingPeriod, colombianDay } from '../shared/accounting.js';
@@ -46,6 +47,7 @@ const cash = createCash(database, accounts, (id) => backups.afterClose(id), audi
 const backups = createAutomaticBackups(database, databasePath);
 const saleCorrections = createSaleCorrections(database, accounts, cash, audit);
 const accountCorrections = createAccountCorrections(database, accounts, cash, audit);
+const staffPaymentCorrections = createStaffPaymentCorrections(database, accounts, cash, audit);
 const inventoryCounts = createInventoryCounts(database, accounts, audit);
 
 const contentTypes: Record<string, string> = {
@@ -100,6 +102,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (/^\/api\/corrections\/(sales|redemptions)(\/|$)/.test(path)) {
       return saleCorrections(request, response, path);
     }
+    if (/^\/api\/corrections\/staff-payments(\/|$)/.test(path)) return staffPaymentCorrections(request, response, path);
     return accountCorrections(request, response, path);
   }
   if (path === '/api/products' || path.startsWith('/api/products/')) {

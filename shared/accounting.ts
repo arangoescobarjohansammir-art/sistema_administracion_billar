@@ -1,3 +1,5 @@
+import type { CashMovementCorrection } from './cash.js';
+
 export type PeriodKind = 'week' | 'month';
 export type AccountingRange = { from: string; to: string };
 export type AccountingAmounts = {
@@ -5,7 +7,7 @@ export type AccountingAmounts = {
   installments: number; charges: number; customerPayments: number; issued: number; redeemed: number;
 };
 export type AccountingDay = AccountingAmounts & { day: string };
-export type AccountingMovement = {
+export type AccountingMovement = CashMovementCorrection & {
   id: number; shiftId: number; date: string; kind: string; category: string; reason: string;
   amount: number; salesDelta: number; purchasesDelta: number;
 };

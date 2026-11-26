@@ -14,6 +14,21 @@ export const cashMovements = {
 
 export type CashMovementKind = keyof typeof cashMovements;
 
+export type CashMovementCorrection = {
+  originalAmount?: number; correctedAt?: string | null; correctionReason?: string | null;
+  compensationId?: number | null; compensatesPaymentId?: number | null;
+};
+
+export function cashMovementCorrectionText(movement: CashMovementCorrection, format: (value: number) => string) {
+  if (!movement.correctedAt || movement.originalAmount === undefined) return '';
+  const original = format(movement.originalAmount);
+  if (movement.compensatesPaymentId) {
+    return 'Entrada original de ' + original + ' vinculada al pago #' + movement.compensatesPaymentId + ' · Compensación aplicada';
+  }
+  return 'Importe original ' + original + (movement.compensationId ? ' · Compensación #' + movement.compensationId : '') +
+    ' · Motivo de corrección ' + movement.correctionReason;
+}
+
 export type CashCount = {
   salesCounted: number; purchasesCounted: number; transferConfirmed: number; countedTokens: number;
 };
