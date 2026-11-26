@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { accountTokenValue as tokenValue, mixedCreditPlan } from '../shared/tender';
 import type { AccountCycle, AccountHistory } from '../shared/account-history';
+import { accountPaymentKey, readAccountPayment, updateAccountPayment, type AccountPaymentDraft } from './account-payment-draft';
 
-export type Account = { id: number; name: string; balance: number };
+export type Account = { id: number; name: string; balance: number; createdAt?: string };
 export type PaymentInput = { cash: number; transfer: number; tokens: number };
 export type Payment = PaymentInput & { id: number; saleId: number | null; tokenValue: number; createdAt: string; voided?: number | null };
 type Sale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number; unitPrice: number }[] };
@@ -19,6 +20,10 @@ export const totalPayment = (payment: PaymentInput, rate = tokenValue) => paymen
 const normalize = (name: string) => name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es');
 export const label = (product: Product) => [product.name, product.brand, product.presentation].filter(Boolean).join(' · ');
 
+class ApiError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+
 export async function api<T>(path: string, data?: object): Promise<T> {
   const response = await fetch('/api/' + path, {
     method: data ? 'POST' : 'GET',
@@ -32,7 +37,7 @@ export async function api<T>(path: string, data?: object): Promise<T> {
   if (response.status === 404 && (result.code === 'API_ROUTE_NOT_FOUND' || result.error === 'Página no encontrada.')) {
     throw new Error(restart);
   }
-  if (!response.ok) throw new Error(result.error ?? 'No se pudo completar la operación.');
+  if (!response.ok) throw new ApiError(response.status, result.error ?? 'No se pudo completar la operación.');
   return result as T;
 }
 
@@ -138,14 +143,17 @@ function ClosedCycle({ cycle, sources }: { cycle: AccountCycle; sources: History
   </details>;
 }
 
-function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Account) => void }) {
+function AccountDetail({ id, accountCreatedAt, onBalance }: { id: number; accountCreatedAt: string; onBalance: (account: Account) => void }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
-  const [status, setStatus] = useState('');
   const [payment, setPayment] = useState(emptyPayment);
   const [busy, setBusy] = useState(false);
-  const write = useOperation();
+  const [draftReady, setDraftReady] = useState(false);
+  const [draft, setDraft] = useState<AccountPaymentDraft | null>(null);
+  const running = useRef(false);
+  const key = accountPaymentKey(id, accountCreatedAt);
+  const paymentPath = 'accounts/' + id + '/payments';
 
   async function load() {
     setLoadError('');
@@ -159,25 +167,79 @@ function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Acc
     }
   }
 
-  useEffect(() => { void load(); }, [id]);
-
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (busy) return;
+  async function run(operation: () => Promise<void>) {
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError('');
-    setStatus('');
     try {
-      const receipt = await write('accounts/' + id + '/payments', { payment });
-      setPayment(emptyPayment);
-      const updated = await load();
-      setStatus('Abono #' + receipt.id + ' guardado.' + (updated?.account.balance === 0
-        ? ' Cuenta saldada. Los movimientos pasaron al historial anterior.' : ''));
+      await operation();
     } catch (error) {
       setError(message(error));
     } finally {
+      running.current = false;
       setBusy(false);
     }
+  }
+
+  async function updateDraft(entry: AccountPaymentDraft, replacement: AccountPaymentDraft | null) {
+    const next = await updateAccountPayment(key, (current) => current?.requestId === entry.requestId ? replacement : current);
+    setDraft(next);
+  }
+
+  async function confirm(entry: AccountPaymentDraft, receiptId: number) {
+    await updateDraft(entry, { ...entry, receiptId });
+    setPayment(emptyPayment);
+    await load();
+  }
+
+  async function check(entry: AccountPaymentDraft) {
+    const receipt = await api<{ id: number | null }>(paymentPath + '?' + new URLSearchParams({ requestId: entry.requestId }));
+    if (receipt.id !== null) await confirm(entry, receipt.id);
+    else if (entry.receiptId !== undefined) {
+      await updateDraft(entry, { requestId: entry.requestId, payment: entry.payment });
+      setError('La caja actual no encuentra el abono anterior. Verifica el historial antes de reenviarlo.');
+    }
+  }
+
+  async function send(entry: AccountPaymentDraft) {
+    try {
+      const receipt = await api<{ id: number }>(paymentPath, { payment: entry.payment, requestId: entry.requestId });
+      await confirm(entry, receipt.id);
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 400 || error.status === 409)) await updateDraft(entry, null);
+      throw error;
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    function restore(verify: boolean) {
+      try {
+        const stored = readAccountPayment(key);
+        setDraft(stored);
+        setDraftReady(true);
+        if (verify && stored) void run(() => check(stored));
+      } catch {
+        setDraftReady(false);
+        setError('El navegador no pudo recuperar los abonos en espera. Vuelve a abrir la cuenta para intentarlo.');
+      }
+    }
+    restore(true);
+    const changed = (event: StorageEvent) => { if (event.key === key || event.key === null) restore(false); };
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, [id, key]);
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draftReady || draft || !detail || paid <= 0 || paid > detail.account.balance) return;
+    void run(async () => {
+      const entry = { requestId: crypto.randomUUID(), payment };
+      const saved = await updateAccountPayment(key, (current) => current ?? entry);
+      setDraft(saved);
+      if (saved?.requestId === entry.requestId) await send(entry);
+    });
   }
 
   if (loadError) return <p role="alert">{loadError} <button className="secondary" onClick={() => void load()}>Volver a cargar</button></p>;
@@ -191,17 +253,34 @@ function AccountDetail({ id, onBalance }: { id: number; onBalance: (account: Acc
   return (
     <section className="ledger" aria-label="Detalle de la cuenta">
       <div className="section-title"><h3>{detail.account.name}</h3><strong>Saldo {money.format(detail.account.balance)}</strong></div>
-      {detail.account.balance > 0 && (
+      {error && <p role="alert">{error}</p>}
+      {draft && <section className="sale-tender" aria-label="Confirmación del abono">
+        {draft.receiptId === undefined ? <>
+          <p role="status">Abono por confirmar · <strong>{money.format(totalPayment(draft.payment))}</strong></p>
+          <p>Verifica si la caja lo guardó. Si hace falta reenviarlo, reintenta este mismo abono.</p>
+          <div className="actions">
+            <button type="button" className="secondary" disabled={busy} onClick={() => void run(() => check(draft))}>Verificar si se guardó</button>
+            <button type="button" disabled={busy} onClick={() => void run(() => send(draft))}>Reintentar el mismo abono</button>
+          </div>
+        </> : <>
+          <p role="status"><strong>Abono #{draft.receiptId} {detail.payments.find((entry) => entry.id === draft.receiptId)?.voided ? 'anulado' : 'guardado'}.</strong>
+            {' '}{money.format(totalPayment(draft.payment))}
+            {detail.account.balance === 0 && ' · Cuenta saldada.'}
+          </p>
+          <button type="button" className="secondary" disabled={busy} onClick={() => void run(() => updateDraft(draft, null))}>
+            {detail.account.balance > 0 ? 'Registrar otro abono' : 'Cerrar confirmación'}
+          </button>
+        </>}
+      </section>}
+      {detail.account.balance > 0 && !draft && draftReady && (
         <form onSubmit={save}>
           <h4>Registrar abono</h4>
           <fieldset disabled={busy} className="plain-fieldset"><PaymentFields value={payment} onChange={setPayment} /></fieldset>
           <p>Total abonado: <strong>{money.format(paid)}</strong></p>
           {paid > detail.account.balance && <p role="alert">El abono supera el saldo.</p>}
-          {error && <p role="alert">{error}</p>}
           <button disabled={busy || paid <= 0 || paid > detail.account.balance}>{busy ? 'Guardando…' : 'Guardar abono'}</button>
         </form>
       )}
-      {status && <p role="status">{status}</p>}
       <section aria-labelledby="current-account-history">
         <h4 id="current-account-history">Historial actual</h4>
         {detail.history.current ? <HistoryTimeline cycle={detail.history.current} sources={sources} />
@@ -265,6 +344,7 @@ export function Accounts() {
 
   const shown = accounts?.filter((account) => normalize(account.name).includes(normalize(search.trim())))
     .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name, 'es'));
+  const selected = accounts?.find((account) => account.id === selectedAccount);
 
   return (
     <section aria-labelledby="accounts-title">
@@ -294,7 +374,7 @@ export function Accounts() {
             </button>
           </li>
         ))}</ul>}
-        {selectedAccount !== null && <AccountDetail key={selectedAccount} id={selectedAccount} onBalance={updateAccount} />}
+        {selected && <AccountDetail key={selected.id} id={selected.id} accountCreatedAt={selected.createdAt ?? ''} onBalance={updateAccount} />}
       </>}
     </section>
   );

@@ -8,6 +8,7 @@ import { createAccountHistory } from './account-history.js';
 
 import { accountTokenValue as tokenValue } from '../shared/tender.js';
 const maxMoney = 1_000_000_000;
+const requestIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type Payment = { cash: number; transfer: number; tokens: number };
 type SaleItem = { productId: number; quantity: number; unitPrice: number };
@@ -165,7 +166,7 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
   }
 
   function writeOnce(requestId: unknown, fingerprint: string, write: () => number) {
-    if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
+    if (typeof requestId !== 'string' || !requestIdPattern.test(requestId)) {
       throw new ValidationError(400, 'Identificador de operación inválido.');
     }
     database.exec('BEGIN IMMEDIATE');
@@ -291,6 +292,13 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     return sendJson(response, result.repeated ? 200 : 201, result);
   }
 
+  const paymentReceipt = database.prepare(`
+    SELECT payment.id FROM account_operations operation
+    JOIN account_payments payment ON payment.id = operation.result_id
+    WHERE operation.request_id = ? AND json_extract(operation.fingerprint, '$[0]') = 'payment'
+      AND payment.account_id = ? AND payment.sale_id IS NULL
+  `);
+
   function getSales(accountId: number | null) {
     const filter = accountId === null ? ' WHERE account_id IS NULL ORDER BY id DESC LIMIT 30' : ' WHERE account_id = ? ORDER BY id DESC';
     const sales = database.prepare('SELECT id, total, created_at AS createdAt, (id IN (SELECT sale_id FROM sale_voids)) AS voided FROM sales' + filter)
@@ -333,6 +341,11 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
       if (!match || !Number.isSafeInteger(Number(match[1]))) throw new ValidationError(404, 'Ruta de cuentas no encontrada.');
       const id = Number(match[1]);
       if (match[2] && request.method === 'POST') return await payAccount(request, response, id);
+      if (match[2] && request.method === 'GET') {
+        const requestId = new URL(request.url ?? '/', 'http://localhost').searchParams.get('requestId');
+        if (!requestId || !requestIdPattern.test(requestId)) throw new ValidationError(400, 'Identificador de operación inválido.');
+        return sendJson(response, 200, { id: paymentReceipt.get(requestId, id)?.id ?? null });
+      }
       if (!match[2] && request.method === 'GET') {
         return sendJson(response, 200, {
           account: accountById(id),

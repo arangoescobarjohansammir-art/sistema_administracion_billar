@@ -77,6 +77,8 @@ En **Venta → Cobrar → Mixto → Repartir fiado entre personas**, elige los c
 
 En **Cuentas**, el **Historial actual** reúne los cargos, pagos y anulaciones con fecha y hora de Colombia. Si queda saldo, los movimientos siguen en ese historial aunque cambie el día o el turno. Cuando la cuenta queda en cero, se puede consultar en **Historial anterior**. El siguiente cargo inicia un ciclo nuevo para el mismo cliente.
 
+Si se pierde la confirmación de un abono, vuelve a abrir la cuenta del cliente en el mismo navegador. La caja consulta si quedó guardado y, si hace falta reenviarlo, muestra **Reintentar el mismo abono**. Cuando se confirme, usa **Registrar otro abono** para un pago diferente, aunque tenga el mismo valor.
+
 En **Venta**, **Billar** y **Tejo**, abre el desplegable para elegir un cliente de la lista completa o escribe parte de su nombre o apodo. Las sugerencias aparecen desde la primera letra, incluso si no escribes las tildes. Puedes elegir con el mouse o con **↓** y **Enter**.
 
 Ejecuta `npm test` para compilar y comprobar el inventario, el fiado, los pagos mixtos, las cuentas de billar y tejo, el cierre de caja y la recuperación de los datos al reiniciar. Las pruebas usan bases temporales.

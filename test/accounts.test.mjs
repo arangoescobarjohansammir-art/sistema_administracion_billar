@@ -6,6 +6,45 @@ import { testServer } from './support/local-server.mjs';
 
 const none = { cash: 0, transfer: 0, tokens: 0 };
 
+test('recupera un abono por su identificador y permite otro legítimo del mismo valor', { timeout: 20000 }, async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  await server.openShift();
+  const post = (path, status, data) => server.json(path, status, 'POST', { requestId: randomUUID(), ...data });
+  const account = await post('/api/accounts', 201, { name: 'Cliente de recuperación' });
+  const other = await post('/api/accounts', 201, { name: 'Otra cuenta' });
+  const product = await post('/api/products', 201, {
+    name: 'Producto a crédito', brand: '', presentation: 'Unidad', price: 30000,
+    packageName: '', unitsPerPackage: 1, active: true,
+  });
+  await post('/api/products/' + product.id + '/movements', 201, { direction: 'in', unit: 'unit', quantity: 1, reason: 'Prueba' });
+  const saleRequestId = randomUUID();
+  await post('/api/sales', 201, { accountId: account.id, items: [{ productId: product.id, quantity: 1, unitPrice: 30000 }],
+    payment: none, requestId: saleRequestId });
+  const path = '/api/accounts/' + account.id + '/payments';
+  const pending = { requestId: randomUUID(), payment: { ...none, cash: 5000 } };
+  const receiptPath = path + '?requestId=' + pending.requestId;
+  assert.deepEqual(await server.json(receiptPath, 200), { id: null });
+  assert.deepEqual(await server.json(path + '?requestId=' + saleRequestId, 200), { id: null });
+  await server.json(path + '?requestId=incorrecto', 400);
+  const original = await post(path, 201, pending);
+  await server.stop();
+  await server.start();
+  assert.deepEqual(await server.json(receiptPath, 200), { id: original.id });
+  assert.deepEqual(await server.json('/api/accounts/' + other.id + '/payments?requestId=' + pending.requestId, 200), { id: null });
+  assert.deepEqual(await post(path, 200, pending), { id: original.id, repeated: true });
+  let report = await server.json('/api/accounts/' + account.id, 200);
+  assert.equal(report.account.balance, 25000);
+  assert.equal(report.payments.length, 1);
+  const separate = await post(path, 201, { payment: pending.payment });
+  assert.notEqual(separate.id, original.id);
+  report = await server.json('/api/accounts/' + account.id, 200);
+  assert.equal(report.account.balance, 20000);
+  assert.deepEqual(report.payments.map(({ id }) => id), [separate.id, original.id]);
+  assert.equal((await server.json('/api/cash', 200)).active.totals.cashReceived, 10000);
+});
+
 test('reparte el fiado de una compra entre dos o más cuentas y registra una vez el pago y los productos', { timeout: 20000 }, async (t) => {
   const server = await testServer();
   t.after(server.cleanup);
