@@ -154,6 +154,40 @@ test('exige volver a contar después de una entrada aunque se abra otra vez la r
   assert.deepEqual(closed.counts.map(({ salesCounted }) => salesCounted), [100000, 120000]);
 });
 
+test('exige y guarda el motivo cuando cambia la base para el próximo turno', { timeout: 20000 }, async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  const { id } = await server.openShift();
+  const path = '/api/cash/' + id;
+  const count = await server.recordCashCount(id, {
+    salesCounted: 100_000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 100,
+  });
+  const close = (status, note) => server.json(path + '/close', status, 'POST', {
+    ...count, requestId: randomUUID(), nextBase: 50_000, note,
+  });
+  for (const note of ['', ' \t ']) {
+    assert.equal((await close(400, note)).error, 'Explica el cambio de la base para el próximo turno.');
+  }
+  assert.equal((await server.json(path, 200)).shift.closedAt, null);
+  const reason = 'Humberto autorizó dejar una base menor.';
+  await close(201, reason);
+  const closed = await server.json(path, 200);
+  assert.equal(closed.shift.closingNote, reason);
+  assert.equal(closed.shift.nextBase, 50_000);
+  assert.equal(closed.totals.salesDelivery, 50_000);
+
+  const next = await server.openShift(50_000);
+  const nextCount = await server.recordCashCount(next.id, {
+    salesCounted: 50_000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 100,
+  });
+  const nextPath = '/api/cash/' + next.id;
+  await server.json(nextPath + '/close', 201, 'POST', {
+    ...nextCount, requestId: randomUUID(), nextBase: 50_000, note: '',
+  });
+  assert.equal((await server.json(nextPath, 200)).shift.closingNote, '');
+});
+
 test('confirma y conserva los juegos pendientes de un cierre cuando se liquidan en el turno siguiente', { timeout: 20000 }, async (t) => {
   const server = await testServer();
   t.after(server.cleanup);

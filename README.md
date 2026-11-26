@@ -36,6 +36,8 @@ En **Personal → Corregir cargos de tejo**, el administrador puede trasladar un
 
 En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. En **Fondo para compras**, el administrador registra el efectivo entregado y la cajera consulta el saldo disponible. Para descontar un pago, usa **Registrar movimiento → Pago desde el fondo para compras**. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, registra el efectivo contado en ambos fondos, las transferencias verificadas y las fichas físicas. Pulsa **Confirmar conteo y revisar** para ver el cuadre. Luego indica la base que dejas y explica cualquier diferencia antes de guardar.
 
+Si la base que dejas para el próximo turno difiere de la base de apertura, escribe el motivo en la nota de cierre. La nota queda en el historial y en el PDF del turno.
+
 Si necesitas volver a contar, usa **Hacer un recuento** e indica el motivo. El turno y su PDF conservan el primer conteo y los recuentos. Si se registra un movimiento de efectivo, transferencias o fichas después de contar, la caja exige un nuevo conteo antes de guardar el cierre, incluso si el saldo esperado queda igual.
 
 El cuadre de fichas suma las recibidas por pago y canje, y resta las entregadas en tejo. El próximo turno muestra cuántas se contaron al cierre anterior. Si estás actualizando con un turno abierto, puedes completar su conteo inicial desde **Caja** y registrar de dónde salió ese dato.

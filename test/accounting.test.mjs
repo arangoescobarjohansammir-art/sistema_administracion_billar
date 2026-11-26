@@ -136,7 +136,7 @@ test('corrige un pago al personal y vincula su compensación una sola vez', asyn
     actorName === 'Administrador de prueba' && targetId === payment.id));
   const finalCount = await server.recordCashCount(id, { salesCounted: 95000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 100 },
     counted.countId, 'Pago corregido');
-  await post(cash + '/close', 201, { ...finalCount, nextBase: 90000, note: '' });
+  await post(cash + '/close', 201, { ...finalCount, nextBase: 90000, note: 'Se redujo la base para el próximo turno.' });
   await post(action, 409, { ...input, requestId: randomUUID() });
   assert.equal((await server.fetch(cash + '/report.pdf')).status, 200);
 });

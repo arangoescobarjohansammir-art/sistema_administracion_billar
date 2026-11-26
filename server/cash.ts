@@ -327,6 +327,9 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     if (!Object.entries(expectedCashCounts(totals)).every(([key, value]) => expected?.[key] === value)) {
       throw new ValidationError(409, 'Hubo movimientos desde la revisión. Revisa las diferencias actualizadas antes de cerrar.');
     }
+    if (!note && nextBase !== shift.openingBase) {
+      throw new ValidationError(400, 'Explica el cambio de la base para el próximo turno.');
+    }
     if (!note && (salesCounted !== totals.salesExpected || purchasesCounted !== totals.purchasesExpected ||
       transferConfirmed !== totals.transferExpected || countedTokens !== totals.expectedTokens)) {
       throw new ValidationError(400, 'Explica las diferencias antes de cerrar el turno.');

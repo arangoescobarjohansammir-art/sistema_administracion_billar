@@ -298,6 +298,11 @@ function ReviewClose({ detail, count, locked, act, recount }: {
   const tokenDifference = totals.expectedTokens === null ? null : count.countedTokens - totals.expectedTokens;
   const mismatch = rows.some((row) => row.difference !== 0) || (tokenDifference !== null && tokenDifference !== 0);
   const validBase = base !== '' && Number(base) <= count.salesCounted;
+  const baseChanged = base !== '' && Number(base) !== shift.openingBase;
+  const noteRequired = baseChanged || mismatch;
+  const noteLabel = baseChanged
+    ? mismatch ? 'Explicación del cambio de base y de las diferencias' : 'Motivo del cambio de base'
+    : mismatch ? 'Explicación de las diferencias' : 'Nota de cierre (opcional)';
   const gamesPending = Boolean(detail.pendingGames && (detail.pendingGames.billiards.length || detail.pendingGames.tejo.length));
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -315,11 +320,13 @@ function ReviewClose({ detail, count, locked, act, recount }: {
     <Reconciliation rows={rows} />
     <p>Fichas esperadas: <strong>{totals.expectedTokens ?? '—'}</strong> · Contadas: <strong>{count.countedTokens}</strong> ·{' '}
       <Difference value={tokenDifference} tokens /></p>
+    <p>Base de apertura <strong>{money.format(shift.openingBase)}</strong></p>
     <fieldset className="field-grid" disabled={locked}>
       <label>Base para el próximo turno (COP)<input type="number" inputMode="numeric" min={0} max={1_000_000_000} step={1} required
         value={base} onChange={(event) => setBase(event.target.value)} /></label>
-      <label>{mismatch ? 'Explicación de las diferencias' : 'Nota de cierre (opcional)'}
-        <input name="note" maxLength={300} required={mismatch} /></label>
+      <label>{noteLabel}
+        <input name="note" maxLength={300} required={noteRequired}
+          pattern={noteRequired ? '.*\\S.*' : undefined} /></label>
     </fieldset>
     {gamesPending && <label className="inline-check"><input type="checkbox" required disabled={locked}
       checked={gamesConfirmed} onChange={(event) => setGamesConfirmed(event.target.checked)} />
