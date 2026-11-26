@@ -4,6 +4,8 @@ import { cashMovementCorrectionText, cashMovements, expectedCashCounts, maxPurch
 import { api, message, money, useOperation } from './Accounts';
 import { BillCounter } from './CashTools';
 import { CashBackups } from './CashBackups';
+import { pendingGamesTotal, type PendingGames } from '../shared/pending-games';
+import { courtLabel } from '../shared/tejo';
 
 type Shift = {
   id: number; cashier: string; openedAt: string; openingBase: number; previousBase: number | null; openingNote: string;
@@ -29,7 +31,10 @@ type Payment = {
   tokens: number; tokenValue: number; createdAt: string;
   voided: number | null; voidReason: string | null;
 };
-type Detail = { shift: Shift; totals: Totals; movements: Movement[]; payments: Payment[]; counts: SavedCashCount[]; requiresRecount: boolean };
+type Detail = {
+  shift: Shift; totals: Totals; movements: Movement[]; payments: Payment[]; counts: SavedCashCount[]; requiresRecount: boolean;
+  pendingGames: PendingGames | null; gamesRevision: string | null;
+};
 type Dashboard = { active: Detail | null; previousBase: number | null; previousTokens: number | null; recent: Shift[] };
 type Action = (path: string, data: object, success: string) => Promise<boolean>;
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Bogota' });
@@ -258,10 +263,30 @@ function CountHistory({ counts }: { counts: SavedCashCount[] }) {
   </details>;
 }
 
+function PendingGamesSummary({ games, closed = false }: { games: PendingGames | null; closed?: boolean }) {
+  return <section aria-label="Juegos pendientes por liquidar">
+    <h4>{closed ? 'Juegos pendientes al cierre' : 'Juegos pendientes por liquidar'}</h4>
+    {!games ? <p>Este cierre se guardó antes de registrar el detalle de juegos pendientes.</p>
+      : !games.billiards.length && !games.tejo.length ? <p>Sin juegos pendientes por liquidar.</p> : <>
+        <p>Total por liquidar <strong>{money.format(pendingGamesTotal(games))}</strong> · Corte {date.format(new Date(games.capturedAt))}</p>
+        <ul className="sale-lines">
+          {games.billiards.map((item) => <li key={item.sessionId}>
+            <span>Billar · mesa {item.table} · Productos {money.format(item.products)} · {item.running ? 'Tiempo estimado' : 'Tiempo'} {money.format(item.time)}</span>
+            <strong>{money.format(item.products + item.time)}</strong>
+          </li>)}
+          {games.tejo.map((item) => <li key={item.roundId}><span>{courtLabel(item.courtType, item.court)} · chico {item.round} sin asignar</span>
+            <strong>{money.format(item.amount)}</strong></li>)}
+        </ul>
+        <p>Estos importes se registran como ventas al liquidar la mesa o asignar el chico.</p>
+      </>}
+  </section>;
+}
+
 function ReviewClose({ detail, count, locked, act, recount }: {
   detail: Detail; count: SavedCashCount; locked: boolean; act: Action; recount: () => void;
 }) {
   const [base, setBase] = useState(String(detail.shift.openingBase));
+  const [gamesConfirmed, setGamesConfirmed] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus(); }, []);
   const { shift, totals } = detail;
@@ -273,13 +298,15 @@ function ReviewClose({ detail, count, locked, act, recount }: {
   const tokenDifference = totals.expectedTokens === null ? null : count.countedTokens - totals.expectedTokens;
   const mismatch = rows.some((row) => row.difference !== 0) || (tokenDifference !== null && tokenDifference !== 0);
   const validBase = base !== '' && Number(base) <= count.salesCounted;
+  const gamesPending = Boolean(detail.pendingGames && (detail.pendingGames.billiards.length || detail.pendingGames.tejo.length));
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (locked || !validBase) return;
+    if (locked || !validBase || (gamesPending && !gamesConfirmed)) return;
     const values = new FormData(event.currentTarget);
     await act('cash/' + shift.id + '/close', {
       countId: count.id, expected: expectedCashCounts(totals), nextBase: Number(base), note: values.get('note'),
+      gamesRevision: detail.gamesRevision, pendingGamesConfirmed: gamesConfirmed,
     }, 'Cierre y entrega registrados.');
   }
 
@@ -294,11 +321,14 @@ function ReviewClose({ detail, count, locked, act, recount }: {
       <label>{mismatch ? 'Explicación de las diferencias' : 'Nota de cierre (opcional)'}
         <input name="note" maxLength={300} required={mismatch} /></label>
     </fieldset>
+    {gamesPending && <label className="inline-check"><input type="checkbox" required disabled={locked}
+      checked={gamesConfirmed} onChange={(event) => setGamesConfirmed(event.target.checked)} />
+      Revisé las mesas y los chicos indicados. Los dejo pendientes por liquidar.</label>}
     {base !== '' && !validBase && <p role="alert">La base siguiente no puede superar el efectivo contado en ventas.</p>}
     {validBase && <p>Entrega al administrador: <strong>{money.format(count.salesCounted - Number(base))}</strong> de ventas y{' '}
       <strong>{money.format(count.purchasesCounted)}</strong> del fondo para compras.</p>}
     <div className="actions">
-      <button disabled={locked || !validBase}>Guardar cierre y entrega</button>
+      <button disabled={locked || !validBase || (gamesPending && !gamesConfirmed)}>Guardar cierre y entrega</button>
       <button type="button" className="secondary" disabled={locked} onClick={recount}>Hacer un recuento</button>
     </div>
     <CountHistory counts={detail.counts} />
@@ -316,6 +346,7 @@ function ActiveShift({ detail, admin, locked, act, refresh }: { detail: Detail; 
       <span>Abierto {date.format(new Date(shift.openedAt))}</span>
     </section>
     <PurchaseFund id={shift.id} expected={detail.totals.purchasesExpected} admin={admin} locked={locked} act={act} />
+    <PendingGamesSummary games={detail.pendingGames} />
     {detail.requiresRecount && <p className="cash-error" role="status">
       El conteo anterior quedó desactualizado. Vuelve a contar el efectivo y las fichas y verifica las transferencias.
     </p>}
@@ -326,7 +357,8 @@ function ActiveShift({ detail, admin, locked, act, refresh }: { detail: Detail; 
           cancel={count && !detail.requiresRecount ? () => setRecountFor(null) : undefined} />
         {count && <CountHistory counts={detail.counts} />}
       </>
-        : <ReviewClose key={count.id} detail={detail} count={count} locked={locked} act={act} recount={() => setRecountFor(count.id)} />}
+        : <ReviewClose key={count.id + ':' + detail.gamesRevision} detail={detail} count={count} locked={locked}
+          act={act} recount={() => setRecountFor(count.id)} />}
     <MovementForm id={shift.id} locked={locked} act={act} />
     <details className="count-history" onToggle={(event) => { if (event.currentTarget.open) refresh(); }}>
       <summary>{count ? 'Ver movimientos y cobros del turno' : 'Ver movimientos del turno'}</summary>
@@ -357,6 +389,7 @@ function ShiftSummary({ detail }: { detail: Detail }) {
         <div><dt>Saldo pendiente de clientes</dt><dd>{money.format(totals.pendingBalance)}</dd></div>
         <div><dt>Valor de fichas recibidas en pagos</dt><dd>{money.format(totals.tokenAmount)}</dd></div>
       </dl>
+      <PendingGamesSummary games={detail.pendingGames} closed />
       <Reconciliation rows={[
         { name: 'Caja de ventas', expected: totals.salesExpected, counted: shift.salesCounted, difference: totals.salesDifference },
         { name: 'Fondo para compras', expected: totals.purchasesExpected, counted: shift.purchasesCounted, difference: totals.purchasesDifference },

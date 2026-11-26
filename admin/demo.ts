@@ -27,6 +27,11 @@ export function demoSnapshot(now = new Date()): AdminSnapshot {
     };
   }
   const closures = [shift(17, 1, true, -1500), shift(16, 2, true), shift(15, 3, true)];
+  closures[0].pendingGames = {
+    capturedAt: closures[0].closedAt!,
+    billiards: [{ sessionId: 1, table: 2, products: 8000, time: 0, running: false }],
+    tejo: [{ roundId: 1, courtType: 'maxi', court: 1, round: 1, amount: 8000 }],
+  };
   return {
     version: 1, day, daily: days, active: shift(18, 0, false),
     closures,

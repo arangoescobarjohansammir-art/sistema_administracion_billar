@@ -1,4 +1,5 @@
 import type { AccountingData } from './accounting.js';
+import type { PendingGames } from './pending-games.js';
 
 export const adminSnapshotId = 'club-patio-bonito';
 export const dashboardRefreshMs = 60_000;
@@ -38,6 +39,7 @@ export type RegisterSummary = {
   salesDifference: number | null; purchasesDifference: number | null;
   transferDifference: number | null; tokenDifference: number | null;
   salesDelivery: number | null; nextBase: number | null; closingNote: string;
+  pendingGames?: PendingGames | null;
 };
 
 export type AdminSnapshot = {

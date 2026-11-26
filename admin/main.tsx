@@ -5,6 +5,7 @@ import { adminSnapshotId, alertPeriodStart, clubDay, clubTimeZone, dashboardRefr
   type AdminSnapshot, type RegisterSummary } from '../shared/admin';
 import { billiardTables } from '../shared/billiard';
 import { courtLabel, tejoCourtsPerType } from '../shared/tejo';
+import { pendingGamesTotal } from '../shared/pending-games';
 import { demoSnapshot } from './demo';
 import { PurchaseFund } from './PurchaseFund';
 import { AccountingPanel } from '../src/AccountingPanel';
@@ -157,7 +158,8 @@ function Alerts({ data, openClosure, openInventory }: {
 }
 
 function Register({ shift }: { shift: RegisterSummary }) {
-  return <dl className="stats">
+  const games = shift.pendingGames;
+  return <><dl className="stats">
     <Stat label="Ventas del turno">{money(shift.salesTotal)}</Stat>
     <Stat label="Efectivo recibido">{money(shift.cashReceived)}</Stat>
     <Stat label="Transferencias del turno">{money(shift.transferExpected)}</Stat>
@@ -172,7 +174,20 @@ function Register({ shift }: { shift: RegisterSummary }) {
       <Stat label="Ventas entregadas">{money(shift.salesDelivery)}</Stat>
       <Stat label="Base para próximo turno">{money(shift.nextBase)}</Stat>
     </>}
-  </dl>;
+  </dl>
+    {games && (games.billiards.length > 0 || games.tejo.length > 0) && <details>
+      <summary>{shift.closedAt ? 'Juegos pendientes al cierre' : 'Juegos por liquidar'} · {money(pendingGamesTotal(games))}</summary>
+      <p className="muted">Corte {formatTime(games.capturedAt)} · Pendiente de registrar como venta.</p>
+      <ul className="rows">
+        {games.billiards.map((item) => <li key={item.sessionId}>
+          <span>Billar · mesa {item.table}<small>Productos {money(item.products)} · {item.running ? 'Tiempo estimado' : 'Tiempo'} {money(item.time)}</small></span>
+          <strong>{money(item.products + item.time)}</strong>
+        </li>)}
+        {games.tejo.map((item) => <li key={item.roundId}><span>{courtLabel(item.courtType, item.court)} · chico {item.round} sin asignar</span>
+          <strong>{money(item.amount)}</strong></li>)}
+      </ul>
+    </details>}
+  </>;
 }
 
 function Cash({ data, focusShift, funding }: { data: AdminSnapshot; focusShift: number | null; funding?: ReactNode }) {

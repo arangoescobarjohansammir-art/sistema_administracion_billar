@@ -5,6 +5,7 @@ import type { PurchaseFunding } from '../shared/admin.js';
 import { type createAccounts, record, ValidationError, whole } from './accounts.js';
 import { activeShiftId, shiftTokenTotals } from './cash-ledger.js';
 import { installCashReconciliation } from './cash-reconciliation.js';
+import { createPendingGames } from './pending-games.js';
 import { cashReportFilename, renderCashReport } from './cash-report.js';
 import { readJson, sendJson } from './http.js';
 import type { Audit } from './audit.js';
@@ -115,6 +116,7 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     if (!existingColumns.has(column)) database.exec('ALTER TABLE cash_shifts ADD COLUMN ' + column + ' ' + definition);
   }
   installCashReconciliation(database);
+  const pending = createPendingGames(database);
 
   const shiftSelect = [
     'SELECT id, cashier, opened_at AS openedAt, opening_base AS openingBase, previous_base AS previousBase,',
@@ -329,13 +331,23 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
       transferConfirmed !== totals.transferExpected || countedTokens !== totals.expectedTokens)) {
       throw new ValidationError(400, 'Explica las diferencias antes de cerrar el turno.');
     }
+    const now = Date.now();
+    const { games, revision } = pending.live(now);
+    if (input.gamesRevision !== undefined && input.gamesRevision !== revision) {
+      throw new ValidationError(409, 'Los juegos pendientes cambiaron. Revisa el detalle actualizado antes de cerrar.');
+    }
+    if ((games.billiards.length || games.tejo.length) &&
+        (input.gamesRevision !== revision || input.pendingGamesConfirmed !== true)) {
+      throw new ValidationError(409, 'Revisa y confirma los juegos pendientes antes de cerrar.');
+    }
     database.prepare([
       'UPDATE cash_shifts SET closed_at = ?, sales_counted = ?, purchases_counted = ?, transfer_confirmed = ?,',
       'next_base = ?, closing_note = ?, sales_expected = ?, purchases_expected = ?, transfer_expected = ?, pending_balance = ?,',
       'counted_tokens = ?, expected_tokens = ? WHERE id = ?',
-    ].join(' ')).run(new Date().toISOString(), salesCounted, purchasesCounted, transferConfirmed, nextBase, note,
+    ].join(' ')).run(games.capturedAt, salesCounted, purchasesCounted, transferConfirmed, nextBase, note,
       totals.salesExpected, totals.purchasesExpected, totals.transferExpected, totals.pendingBalance,
       countedTokens, totals.expectedTokens, id);
+    pending.save(id, games);
     return id;
   }
 
@@ -362,13 +374,15 @@ export function createCash(database: DatabaseSync, accounts: Accounts, afterClos
     const latest = counts.at(-1);
     const requiresRecount = shift.closedAt === null && latest !== undefined &&
       latest.reconciliationRevision !== shift.reconciliationRevision;
-    return { shift, totals: summarize(shift), movements, payments, counts, requiresRecount };
+    const current = shift.closedAt === null ? pending.live() : null;
+    return { shift, totals: summarize(shift), movements, payments, counts, requiresRecount,
+      pendingGames: current?.games ?? pending.read(id), gamesRevision: current?.revision ?? null };
   }
 
   function adminOverview() {
     function details(id: number) {
       const shift = shiftById(id);
-      return { shift, totals: summarize(shift) };
+      return { shift, totals: summarize(shift), pendingGames: shift.closedAt === null ? pending.live().games : pending.read(id) };
     }
     const id = activeShiftId(database);
     const closures = database.prepare('SELECT id FROM cash_shifts WHERE closed_at IS NOT NULL ORDER BY id DESC LIMIT 30').all();

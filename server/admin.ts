@@ -1,15 +1,14 @@
-import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import { adminSnapshotId, alertPeriodStart, clubDay, dashboardRefreshMs, type AdminSnapshot,
   type PurchaseFunding, type PurchaseFundingResult, type RegisterSummary } from '../shared/admin.js';
 import type { createCash } from './cash.js';
 import { type createAccounts, ValidationError } from './accounts.js';
 import { mobileAccountingRange, readAccounting } from './accounting.js';
 
-type Row = Record<string, SQLOutputValue>;
 type Cash = ReturnType<typeof createCash>;
 type Accounts = ReturnType<typeof createAccounts>;
 
-function registerSummary(shift: Row, totals: ReturnType<Cash['adminOverview']>['closures'][number]['totals']): RegisterSummary {
+function registerSummary({ shift, totals, pendingGames }: ReturnType<Cash['adminOverview']>['closures'][number]): RegisterSummary {
   return {
     id: Number(shift.id), cashier: String(shift.cashier), openedAt: String(shift.openedAt),
     closedAt: shift.closedAt === null ? null : String(shift.closedAt),
@@ -20,6 +19,7 @@ function registerSummary(shift: Row, totals: ReturnType<Cash['adminOverview']>['
     transferDifference: totals.transferDifference, tokenDifference: totals.tokenDifference,
     salesDelivery: totals.salesDelivery, nextBase: shift.nextBase === null ? null : Number(shift.nextBase),
     closingNote: shift.closingNote === null ? '' : String(shift.closingNote),
+    pendingGames,
   };
 }
 
@@ -55,8 +55,8 @@ export function createAdminSnapshot(database: DatabaseSync, cash: Cash, accounts
   return {
     version: 1, purchaseFundingEnabled: true, day, daily, pendingBalance, openBalances: accounts.openBalances(),
     accounting: readAccounting(database, mobileAccountingRange(now), now),
-    active: active && registerSummary(active.shift, active.totals),
-    closures: closures.map(({ shift, totals }) => registerSummary(shift, totals)),
+    active: active && registerSummary(active),
+    closures: closures.map(registerSummary),
     unexpectedWithdrawals: database.prepare(`
       SELECT id, shift_id AS shiftId, kind, amount, category, reason, created_at AS createdAt
       FROM cash_movements WHERE kind IN ('sales_expense', 'sales_withdrawal') AND created_at >= ? AND created_at <= ?

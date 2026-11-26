@@ -154,6 +154,60 @@ test('exige volver a contar después de una entrada aunque se abra otra vez la r
   assert.deepEqual(closed.counts.map(({ salesCounted }) => salesCounted), [100000, 120000]);
 });
 
+test('confirma y conserva los juegos pendientes de un cierre cuando se liquidan en el turno siguiente', { timeout: 20000 }, async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  const { id } = await server.openShift();
+  const path = '/api/cash/' + id;
+  const { json } = server;
+  const post = (route, status, data) => json(route, status, 'POST', { requestId: randomUUID(), ...data });
+  const { id: productId } = await post('/api/products', 201, {
+    name: 'Cerveza ficticia', brand: '', presentation: 'Unidad', price: 4000, packageName: '', unitsPerPackage: 1, active: true,
+  });
+  await post('/api/products/' + productId + '/movements', 201,
+    { direction: 'in', unit: 'unit', quantity: 3, reason: 'Prueba' });
+  const table = await post('/api/billiards', 201, { table: 2 });
+  const tablePath = '/api/billiards/' + table.id;
+  await post(tablePath + '/items', 201, { productId, quantity: 2, unitPrice: 4000 });
+  const session = await post('/api/tejo', 201, { courtType: 'maxi', courtNumber: 1, playerCount: 2 });
+  const tejoPath = '/api/tejo/' + session.id;
+  await post(tejoPath + '/record', 201, { issueAll: false });
+  const count = await server.recordCashCount(id, { salesCounted: 100000, purchasesCounted: 0, transferConfirmed: 0, countedTokens: 100 });
+  const review = await json(path, 200);
+  assert.deepEqual([review.totals.salesTotal, review.totals.pendingBalance], [0, 0]);
+  assert.deepEqual(review.pendingGames.billiards.map(({ table, products, running }) => [table, products, running]), [[2, 8000, true]]);
+  assert.deepEqual(review.pendingGames.tejo.map(({ court, round, amount }) => [court, round, amount]), [[1, 1, 8000]]);
+  const closing = { ...count, nextBase: 100000, note: '', gamesRevision: review.gamesRevision };
+  await post(path + '/close', 409, closing);
+  await post(tablePath + '/stop', 201, {});
+  await post(path + '/close', 409, { ...closing, pendingGamesConfirmed: true });
+  const checked = await json(path, 200);
+  assert.equal(checked.requiresRecount, false);
+  assert.equal(checked.pendingGames.billiards[0].running, false);
+  const final = { ...closing, gamesRevision: checked.gamesRevision, pendingGamesConfirmed: true, requestId: randomUUID() };
+  await post(path + '/close', 201, final);
+  await post(path + '/close', 200, final);
+  const closed = await json(path, 200);
+  assert.deepEqual(closed.pendingGames.billiards, checked.pendingGames.billiards);
+  assert.deepEqual(closed.pendingGames.tejo, checked.pendingGames.tejo);
+  assert.equal(closed.pendingGames.capturedAt, closed.shift.closedAt);
+  assert.equal((await server.fetch(path + '/report.pdf')).status, 200);
+  const next = await server.openShift();
+  const account = await post('/api/accounts', 201, { name: 'Cliente ficticio' });
+  const bill = (await json('/api/billiards', 200)).active[0];
+  const none = { cash: 0, transfer: 0, tokens: 0 };
+  await post(tablePath + '/close', 201, { participants: [{
+    accountId: account.id, time: bill.time, items: [{ id: bill.items[0].id, amount: 8000 }], payment: none,
+  }] });
+  const group = (await json('/api/tejo', 200)).active[0];
+  await post(tejoPath + '/assign', 201, { losses: [{ playerId: group.players[0].id, count: 1, accountId: account.id }] });
+  const following = await json('/api/cash/' + next.id, 200);
+  assert.deepEqual([following.pendingGames.billiards, following.pendingGames.tejo], [[], []]);
+  assert.equal(following.totals.salesTotal, 16000 + bill.time);
+  assert.deepEqual((await json(path, 200)).pendingGames, closed.pendingGames);
+});
+
 test('conserva un turno abierto de una versión anterior al agregar el conteo de fichas', { timeout: 20000 }, async (t) => {
   const { start, stop, json, cleanup, openShift, databasePath, recordCashCount } = await testServer();
   t.after(cleanup);

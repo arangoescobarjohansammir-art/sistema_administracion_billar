@@ -1,10 +1,13 @@
 import PDFDocument from 'pdfkit';
 import type { DatabaseSync } from 'node:sqlite';
+import { pendingGamesTotal, type PendingGames } from '../shared/pending-games.js';
+import { courtLabel } from '../shared/tejo.js';
 import { cashMovementCorrectionText, cashMovements, type CashMovementCorrection, type CashMovementKind, type SavedCashCount } from '../shared/cash.js';
 
 type RecordRow = Record<string, unknown>;
 type ReportData = {
   shift: RecordRow; totals: RecordRow; movements: (RecordRow & CashMovementCorrection)[]; payments: RecordRow[]; counts: SavedCashCount[];
+  pendingGames: PendingGames | null;
 };
 type Column = { label: string; width: number; right?: boolean };
 type DetailTable = { title: string; columns: Column[]; rows: string[][] };
@@ -256,6 +259,16 @@ export function renderCashReport(database: DatabaseSync, data: ReportData, gener
       ['Cobros por transferencia', money(totals.transferExpected), 'Valor de fichas en pagos', money(totals.tokenAmount)],
       ['Abonos a cuentas', money(totals.accountCollections), 'Saldo pendiente de clientes', money(totals.pendingBalance)],
     ], true);
+    const games = data.pendingGames;
+    if (games && (games.billiards.length || games.tejo.length)) {
+      table('Juegos pendientes al cierre', [column('Juego', 162), column('Detalle al corte', 259), column('Por liquidar', 99, true)], [
+        ...games.billiards.map((item) => ['Billar · mesa ' + item.table,
+          'Productos ' + money(item.products) + ' · ' + (item.running ? 'Tiempo estimado ' : 'Tiempo ') + money(item.time),
+          money(item.products + item.time)]),
+        ...games.tejo.map((item) => [courtLabel(item.courtType, item.court), 'Chico ' + item.round + ' sin asignar', money(item.amount)]),
+        ['Total por liquidar', 'Se registra como venta al liquidar o asignar el juego.', money(pendingGamesTotal(games))],
+      ], true);
+    }
     table('Cuadre de efectivo y transferencias', [column('Fondo o medio', 157), column('Esperado', 105, true),
       column('Contado o verificado', 135, true), column('Diferencia', 123, true)], [
       ['Caja de ventas', money(totals.salesExpected), money(shift.salesCounted), difference(totals.salesDifference, money)],
