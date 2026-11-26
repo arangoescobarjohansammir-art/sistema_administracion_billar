@@ -40,6 +40,8 @@ El cuadre de fichas suma las recibidas por pago y canje, y resta las entregadas 
 
 Al guardar un cierre, el sistema muestra **Descargar informe PDF**. También puedes volver a descargarlo desde **Caja → Historial de cierres**. El informe del Club de Tejo Patio Bonito incluye el encargado, el cajero, las horas del turno y de emisión, el cuadre de efectivo, transferencias y fichas, la entrega al administrador y el detalle de los movimientos. Se genera en el computador con los datos del turno cerrado.
 
+En **Reportes** el administrador puede elegir una semana de lunes a domingo o un mes calendario de Colombia y descargar el PDF. El informe muestra ventas, cobros por medio, anulaciones, movimientos de fondos, saldos de clientes y diferencias de los turnos cerrados. Los movimientos siguen la fecha en que se registraron y cada cuadre se incluye por la fecha de cierre del turno completo. Los abonos ya están incluidos en los cobros.
+
 ## Ejecutar en el computador
 
 ### Inicio automático en el PC de caja con Windows

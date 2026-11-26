@@ -3,6 +3,7 @@ import { adminSnapshotId, alertPeriodStart, clubDay, dashboardRefreshMs, type Ad
   type PurchaseFunding, type PurchaseFundingResult, type RegisterSummary } from '../shared/admin.js';
 import type { createCash } from './cash.js';
 import { type createAccounts, ValidationError } from './accounts.js';
+import { mobileAccountingRange, readAccounting } from './accounting.js';
 
 type Row = Record<string, SQLOutputValue>;
 type Cash = ReturnType<typeof createCash>;
@@ -53,6 +54,7 @@ export function createAdminSnapshot(database: DatabaseSync, cash: Cash, accounts
   const { active, closures, pendingBalance } = cash.adminOverview();
   return {
     version: 1, purchaseFundingEnabled: true, day, daily, pendingBalance, openBalances: accounts.openBalances(),
+    accounting: readAccounting(database, mobileAccountingRange(now), now),
     active: active && registerSummary(active.shift, active.totals),
     closures: closures.map(({ shift, totals }) => registerSummary(shift, totals)),
     unexpectedWithdrawals: database.prepare(`

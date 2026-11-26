@@ -16,6 +16,8 @@ import { createSaleCorrections } from './sale-corrections.js';
 import { createAccountCorrections } from './account-corrections.js';
 import { createInventoryCounts } from './inventory-counts.js';
 import { readJson, sendJson } from './http.js';
+import { accountingPeriod, colombianDay } from '../shared/accounting.js';
+import { readAccounting } from './accounting.js';
 
 const host = '127.0.0.1';
 const port = Number(process.env.PORT ?? 4173);
@@ -121,6 +123,17 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return sendJson(response, 200, backups.status());
     }
     return cash.handle(request, response, path);
+  }
+  if (path === '/api/reports') {
+    if (operator?.role !== 'admin') return sendJson(response, 403, { error: 'Los reportes son para el administrador.' });
+    if (request.method !== 'GET') return sendJson(response, 405, { error: 'Método no permitido.' });
+    const query = new URL(request.url ?? '/', `http://${host}`).searchParams;
+    const period = accountingPeriod(query.get('kind'), query.get('anchor'));
+    const now = new Date();
+    if (!period || period.from > colombianDay.format(now)) {
+      return sendJson(response, 400, { error: 'Elige una semana o un mes con una fecha válida.' });
+    }
+    return sendJson(response, 200, readAccounting(database, period, now));
   }
   if (path === '/api/local-note') {
     if (request.method === 'GET') {

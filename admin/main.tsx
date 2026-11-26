@@ -7,6 +7,7 @@ import { billiardTables } from '../shared/billiard';
 import { courtLabel, tejoCourtsPerType } from '../shared/tejo';
 import { demoSnapshot } from './demo';
 import { PurchaseFund } from './PurchaseFund';
+import { AccountingPanel } from '../src/AccountingPanel';
 import clubIcon from '../shared/brand/club-icon.png';
 import './style.css';
 
@@ -25,8 +26,8 @@ const formatTime = (value: string) => dateTime.format(new Date(value));
 const count = (value: number | null) => value === null ? '—' : String(value);
 
 type CloudSnapshot = { payload: AdminSnapshot; synced_at: string };
-type Tab = 'Alertas' | 'Ventas' | 'Caja' | 'Juegos' | 'Inventario';
-const tabs: Tab[] = ['Alertas', 'Ventas', 'Caja', 'Juegos', 'Inventario'];
+type Tab = 'Alertas' | 'Ventas' | 'Caja' | 'Reportes' | 'Juegos' | 'Inventario';
+const tabs: Tab[] = ['Alertas', 'Ventas', 'Caja', 'Reportes', 'Juegos', 'Inventario'];
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return <div className="stat"><dt>{label}</dt><dd>{children}</dd></div>;
@@ -260,6 +261,7 @@ function Dashboard({ data, updatedAt, funding }: { data: AdminSnapshot; updatedA
       openInventory={() => setTab('Inventario')} />}
     {tab === 'Ventas' && <Sales data={data} />}
     {tab === 'Caja' && <Cash data={data} focusShift={focusShift} funding={funding} />}
+    {tab === 'Reportes' && <AccountingPanel cloud={data.accounting} demo={isDemo} />}
     {tab === 'Juegos' && <Games data={data} />}
     {tab === 'Inventario' && <Inventory data={data} />}
   </>;

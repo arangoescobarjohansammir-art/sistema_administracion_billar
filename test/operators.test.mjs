@@ -34,6 +34,7 @@ test('identifica al cajero y conserva la venta original al anular su pago, créd
   const cashierCookie = cashierCopy.headers.get('Set-Cookie').split(';')[0];
   assert.equal((await json('/api/session', 200)).operator.name, 'Diana Pérez');
   await json('/api/audit', 403);
+  await json('/api/reports?kind=month&anchor=2026-10', 403);
   await json('/api/corrections/sales', 403);
   await post('/api/operators', 403, { name: 'Otro', username: 'otro', secret: '123456' });
   const shift = await server.openShift();
@@ -67,6 +68,8 @@ test('identifica al cajero y conserva la venta original al anular su pago, créd
   assert.equal((await json('/api/products', 200))[0].stock, 4);
 
   await server.signIn('login', admin, 200);
+  await json('/api/reports?kind=week&anchor=2026-02-30', 400);
+  assert.equal((await json('/api/reports?kind=month&anchor=2026-10', 200)).from, '2026-10-01');
   await post(voidPath, 400, { ...correction, reason: ' ', requestId: randomUUID() });
   await post(voidPath, 201, correction);
   await post(voidPath, 200, correction);

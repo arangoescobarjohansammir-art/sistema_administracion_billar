@@ -1,4 +1,5 @@
 import { clubDay, type AdminSnapshot, type RegisterSummary } from '../shared/admin';
+import { accountingPeriod, emptyAmounts } from '../shared/accounting';
 
 export function demoSnapshot(now = new Date()): AdminSnapshot {
   const day = clubDay(now);
@@ -25,9 +26,27 @@ export function demoSnapshot(now = new Date()): AdminSnapshot {
       closingNote: difference ? 'Al contar el efectivo del turno faltaron $1.500.' : '',
     };
   }
+  const closures = [shift(17, 1, true, -1500), shift(16, 2, true), shift(15, 3, true)];
   return {
     version: 1, day, daily: days, active: shift(18, 0, false),
-    closures: [shift(17, 1, true, -1500), shift(16, 2, true), shift(15, 3, true)],
+    closures,
+    accounting: {
+      from: accountingPeriod('week', days[0].day)!.from, to: day, asOf: now.toISOString(),
+      days: days.map(({ day, sales, cash, transfer, tokens, tokenAmount }) => ({
+        ...emptyAmounts(), day, sales, cash, transfer, tokens, tokenValue: tokenAmount, issued: 8, redeemed: 4,
+      })),
+      movements: [{ id: 1, shiftId: 17, date: closures[0].closedAt!, kind: 'purchase_in', category: 'Compras',
+        reason: 'Pedido de cerveza y gaseosas', amount: 40_000, salesDelta: 0, purchasesDelta: 40_000 }],
+      closes: closures.map((entry) => ({
+        id: entry.id, cashier: entry.cashier, date: entry.closedAt!, note: entry.closingNote, openingBase: 100_000, nextBase: entry.nextBase,
+        salesExpected: entry.salesExpected, salesCounted: entry.salesExpected + (entry.salesDifference ?? 0),
+        purchasesExpected: entry.purchasesExpected, purchasesCounted: entry.purchasesExpected,
+        transferExpected: entry.transferExpected, transferConfirmed: entry.transferExpected,
+        expectedTokens: entry.expectedTokens, countedTokens: entry.expectedTokens,
+      })),
+      customers: [{ id: 1, name: 'Cliente ficticio', opening: 18_000 }],
+      changes: [{ day, id: 1, charges: 42_000, payments: 15_000 }],
+    },
     unexpectedWithdrawals: [
       { id: 2, shiftId: 18, kind: 'sales_expense', amount: 24_000, category: 'Bebidas', reason: 'Compra imprevista de gaseosas',
         createdAt: new Date(now.getTime() - 35 * 60_000).toISOString() },

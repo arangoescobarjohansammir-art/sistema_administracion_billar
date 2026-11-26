@@ -8,6 +8,8 @@ import { Cash } from './Cash';
 import { QuickSale } from './QuickSale';
 import { Access, type CashSession } from './Access';
 import { Staff } from './Staff';
+import { AccountingPanel } from './AccountingPanel';
+import type { AccountingData, PeriodKind } from '../shared/accounting';
 import type { Operator } from '../shared/operators';
 import clubIcon from '../shared/brand/club-icon.png';
 import { useCajaKeyboard } from './keyboard';
@@ -93,7 +95,10 @@ const modules = [
   ['sale', 'Venta'], ['billiards', 'Billar'], ['tejo', 'Tejo'], ['accounts', 'Cuentas'],
   ['catalog', 'Inventario'], ['cash', 'Caja'], ['note', 'Nota de caja'],
 ] as const;
-type Section = typeof modules[number][0] | 'staff';
+type Section = typeof modules[number][0] | 'staff' | 'reports';
+
+const loadAccounting = (kind: PeriodKind, date: string) =>
+  api<AccountingData>('reports?' + new URLSearchParams({ kind, anchor: date }));
 
 const localDate = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
 const localClock = new Intl.DateTimeFormat('es-CO', { timeStyle: 'medium', timeZone: 'America/Bogota' });
@@ -151,6 +156,8 @@ function App({ operator, onLogout }: { operator: Operator; onLogout: () => void 
             aria-pressed={section === id} onClick={() => setSection(id)}>{name}</button>)}
           {operator.role === 'admin' && <button type="button" className="navigation" aria-pressed={section === 'staff'}
             onClick={() => setSection('staff')}>Personal</button>}
+          {operator.role === 'admin' && <button type="button" className="navigation" aria-pressed={section === 'reports'}
+            onClick={() => setSection('reports')}>Reportes</button>}
         </nav>
       </header>
       <main>
@@ -165,6 +172,7 @@ function App({ operator, onLogout }: { operator: Operator; onLogout: () => void 
         {section === 'cash' && <Cash operatorName={operator.name} admin={operator.role === 'admin'} onShiftChange={setCashOpen} />}
         {section === 'note' && <LocalNoteForm />}
         {section === 'staff' && operator.role === 'admin' && <Staff />}
+        {section === 'reports' && operator.role === 'admin' && <AccountingPanel load={loadAccounting} />}
       </main>
       <footer className="app-keys" aria-label="Atajos de teclado">
         <span><kbd>↑ ↓ ← →</kbd> Moverse</span><span><kbd>Enter</kbd> Elegir</span>

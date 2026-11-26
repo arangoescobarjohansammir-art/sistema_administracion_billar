@@ -1,3 +1,5 @@
+import type { AccountingData } from './accounting.js';
+
 export const adminSnapshotId = 'club-patio-bonito';
 export const dashboardRefreshMs = 60_000;
 export const clubTimeZone = 'America/Bogota';
@@ -41,6 +43,7 @@ export type RegisterSummary = {
 export type AdminSnapshot = {
   version: 1;
   purchaseFundingEnabled?: true;
+  accounting?: AccountingData;
   day: string;
   daily: DailySales[];
   active: RegisterSummary | null;
