@@ -21,6 +21,7 @@ export function accountingTotals(report: AccountingReport) {
     ['Aportes en efectivo para compras', accountingMoney(kinds.get('purchase_in') ?? 0)],
     ['Pagos desde el fondo para compras', accountingMoney(kinds.get('purchase_expense') ?? 0)],
     ['Gastos pagados con caja de ventas', accountingMoney(kinds.get('sales_expense') ?? 0)],
+    ['Pagos diarios al personal', accountingMoney(kinds.get('staff_payment') ?? 0)],
     ['Otros retiros de caja de ventas', accountingMoney(kinds.get('sales_withdrawal') ?? 0)],
     ['Saldo de clientes al inicio', accountingMoney(accounts.reduce((sum, account) => sum + account.opening, 0))],
     ['Saldo de clientes al corte', accountingMoney(accounts.reduce((sum, account) => sum + account.closing, 0))],
@@ -63,6 +64,15 @@ export type AccountingTable = {
 };
 
 export function accountingTables(report: AccountingReport): AccountingTable[] {
+  const staff = new Map<string, { name: string; payments: number; total: number }>();
+  for (const movement of report.movements) {
+    if (movement.kind !== 'staff_payment') continue;
+    const key = movement.category.toLocaleLowerCase('es-CO').replace(/\s+/g, ' ');
+    const entry = staff.get(key) ?? { name: movement.category, payments: 0, total: 0 };
+    entry.payments++;
+    entry.total += movement.amount;
+    staff.set(key, entry);
+  }
   return [
     {
       title: 'Diferencias acumuladas de cierres',
@@ -116,6 +126,13 @@ export function accountingTables(report: AccountingReport): AccountingTable[] {
       widths: [164, 89, 89, 89, 89], right: [1, 2, 3, 4],
       rows: report.accounts.map((row) => [row.name, accountingMoney(row.opening), accountingMoney(row.charges),
         accountingMoney(row.payments), accountingMoney(row.closing)]),
+    },
+    {
+      title: 'Pagos diarios por empleado',
+      headers: ['Empleado', 'Pagos registrados', 'Total pagado'],
+      widths: [260, 130, 130], right: [1, 2],
+      rows: [...staff.values()].sort((a, b) => a.name.localeCompare(b.name, 'es-CO'))
+        .map(({ name, payments, total }) => [name, number.format(payments), accountingMoney(total)]),
     },
     {
       title: 'Cargos y pagos por cliente y día',

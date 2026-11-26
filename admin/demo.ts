@@ -35,8 +35,12 @@ export function demoSnapshot(now = new Date()): AdminSnapshot {
       days: days.map(({ day, sales, cash, transfer, tokens, tokenAmount }) => ({
         ...emptyAmounts(), day, sales, cash, transfer, tokens, tokenValue: tokenAmount, issued: 8, redeemed: 4,
       })),
-      movements: [{ id: 1, shiftId: 17, date: closures[0].closedAt!, kind: 'purchase_in', category: 'Compras',
-        reason: 'Pedido de cerveza y gaseosas', amount: 40_000, salesDelta: 0, purchasesDelta: 40_000 }],
+      movements: [
+        { id: 1, shiftId: 17, date: closures[0].closedAt!, kind: 'purchase_in', category: 'Compras',
+          reason: 'Pedido de cerveza y gaseosas', amount: 40_000, salesDelta: 0, purchasesDelta: 40_000 },
+        { id: 2, shiftId: 17, date: closures[0].closedAt!, kind: 'staff_payment', category: 'Empleado ficticio',
+          reason: 'Pago de jornada', amount: 50_000, salesDelta: -50_000, purchasesDelta: 0 },
+      ],
       closes: closures.map((entry) => ({
         id: entry.id, cashier: entry.cashier, date: entry.closedAt!, note: entry.closingNote, openingBase: 100_000, nextBase: entry.nextBase,
         salesExpected: entry.salesExpected, salesCounted: entry.salesExpected + (entry.salesDifference ?? 0),

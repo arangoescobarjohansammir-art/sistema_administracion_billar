@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { accountingPeriod, accountingReport } from '../dist/shared/accounting.js';
+import { accountingPeriod, accountingReport, colombianDay } from '../dist/shared/accounting.js';
 import { readAccounting } from '../dist/server/accounting.js';
+import { accountingMoney, accountingTables, accountingTotals } from '../dist/shared/accounting-tables.js';
 import { testServer } from './support/local-server.mjs';
 
 test('calcula el saldo al corte y aplica las correcciones en su fecha colombiana', async (t) => {
@@ -52,4 +54,32 @@ test('calcula el saldo al corte y aplica las correcciones en su fecha colombiana
   assert.deepEqual(week.movements.map(({ id }) => id), [2]);
   assert.deepEqual(week.closes.map(({ id }) => id), [1]);
   assert.equal(accountingReport(data, month).accounts[0].closing, 65000);
+});
+
+test('descuenta el pago diario solo de ventas y lo muestra por empleado en los reportes', async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  const { id } = await server.openShift(100000, 100);
+  const path = '/api/cash/' + id;
+  const post = (url, status, fields) => server.json(url, status, 'POST', { requestId: randomUUID(), ...fields });
+  await post(path + '/movements', 201, { kind: 'purchase_in', amount: 91000, category: 'Compras', reason: 'Entrega de efectivo' });
+  const payment = { kind: 'staff_payment', amount: 45000, category: 'Ana de prueba', reason: 'Pago de jornada' };
+  await post(path + '/movements', 400, { ...payment, category: ' ' });
+  await post(path + '/movements', 409, { ...payment, amount: 110000 });
+  await post(path + '/movements', 201, payment);
+  await post(path + '/movements', 201, { ...payment, category: 'ana de prueba', amount: 5000, reason: 'Horas adicionales' });
+  const { totals } = await server.json(path, 200);
+  assert.equal(totals.salesExpected, 50000);
+  assert.equal(totals.purchasesExpected, 91000);
+  assert.equal(totals.transferExpected, 0);
+  assert.deepEqual(await server.json('/api/cash/purchase-references', 200), []);
+  const month = colombianDay.format(new Date()).slice(0, 7);
+  const data = await server.json('/api/reports?kind=month&anchor=' + month, 200);
+  const report = accountingReport(data, accountingPeriod('month', month));
+  assert.equal(Object.fromEntries(accountingTotals(report))['Pagos diarios al personal'], accountingMoney(50000));
+  assert.deepEqual(accountingTables(report).find(({ title }) => title === 'Pagos diarios por empleado').rows,
+    [['Ana de prueba', '2', accountingMoney(50000)]]);
+  const audit = await server.json('/api/audit', 200);
+  assert.ok(audit.some(({ kind, reason }) => kind === 'cash_movement' && reason.includes('Pago diario al personal')));
 });

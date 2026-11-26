@@ -92,28 +92,40 @@ function RecoverOpeningTokens({ id, locked, act }: { id: number; locked: boolean
 }
 
 function MovementForm({ id, locked, act }: { id: number; locked: boolean; act: Action }) {
+  const [kind, setKind] = useState<CashMovementKind>('sales_expense');
+  const staffPayment = kind === 'staff_payment';
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (locked) return;
     const form = event.currentTarget;
     const values = new FormData(form);
+    const note = String(values.get('reason') ?? '').trim();
     if (await act('cash/' + id + '/movements', {
-      kind: values.get('kind'), amount: Number(values.get('amount')), category: values.get('category'), reason: values.get('reason'),
-    }, 'Movimiento de caja registrado.')) form.reset();
+      kind, amount: Number(values.get('amount')), category: values.get('category'),
+      reason: staffPayment && !note ? 'Pago de jornada' : note,
+    }, staffPayment ? 'Pago diario al personal registrado.' : 'Movimiento de caja registrado.')) {
+      form.reset();
+      setKind('sales_expense');
+    }
   }
   return (
     <form onSubmit={save}>
       <h3>Registrar movimiento</h3>
       <fieldset className="field-grid" disabled={locked}>
-        <label className="wide">Tipo de movimiento<select name="kind" defaultValue="sales_expense">
+        <label className="wide">Tipo de movimiento<select name="kind" value={kind}
+          onChange={(event) => setKind(event.target.value as CashMovementKind)}>
           {Object.entries(cashMovements).filter(([kind]) => kind !== 'purchase_in')
             .map(([kind, movement]) => <option key={kind} value={kind}>{movement.label}</option>)}
         </select></label>
         <label>Importe (COP)<input name="amount" type="number" min={1} max={1_000_000_000} step={1} required /></label>
-        <label>Categoría<input name="category" placeholder="Ej. Cerveza" maxLength={80} required /></label>
-        <label className="wide">Motivo<input name="reason" placeholder="Explica a qué corresponde" maxLength={300} required /></label>
+        <label>{staffPayment ? 'Nombre del empleado' : 'Categoría'}
+          <input key={staffPayment ? 'employee' : 'category'} name="category" placeholder={staffPayment ? 'Ej. María Pérez' : 'Ej. Cerveza'} maxLength={80} required /></label>
+        <label className="wide">{staffPayment ? 'Nota (opcional)' : 'Motivo'}
+          <input key={staffPayment ? 'staff-note' : 'reason'} name="reason" placeholder={staffPayment ? 'Ej. Jornada de hoy' : 'Explica a qué corresponde'}
+            maxLength={300} required={!staffPayment} /></label>
       </fieldset>
-      <button disabled={locked}>Guardar movimiento</button>
+      {staffPayment && <p>El pago se descontará del efectivo de la caja de ventas.</p>}
+      <button disabled={locked}>{staffPayment ? 'Registrar pago al personal' : 'Guardar movimiento'}</button>
     </form>
   );
 }
