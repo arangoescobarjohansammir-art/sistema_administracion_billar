@@ -194,6 +194,7 @@ function RecordChicos({ group, accounts, products, locked, act, availableTokens 
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [names, setNames] = useState<Record<number, string>>({});
   const pending = group.rounds.filter((round) => isPending(round) && !hasStake(round));
+  const differentValues = new Set(pending.map(({ total }) => total)).size > 1;
   const size = group.teamSize ?? 0;
   const total = Object.values(counts).reduce((sum, count) => sum + Number(count), 0);
   const missingName = group.players.some((player) => Number(counts[player.id]) > 0 && player.accountId === null && !names[player.id]?.trim());
@@ -201,7 +202,7 @@ function RecordChicos({ group, accounts, products, locked, act, availableTokens 
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (locked || total <= 0 || total > pending.length || missingName) return;
+    if (locked || differentValues || total <= 0 || total > pending.length || missingName) return;
     const losses = group.players.filter((player) => Number(counts[player.id]) > 0)
       .map((player) => ({ playerId: player.id, count: Number(counts[player.id]), name: names[player.id] }));
     if (await act(base + '/assign', { losses }, 'Chicos asignados. Puedes cobrar el saldo en Cuentas.')) {
@@ -223,7 +224,8 @@ function RecordChicos({ group, accounts, products, locked, act, availableTokens 
       </div> : <p>{group.players.map((player) => player.name + ' (' + group.rounds.filter((round) => round.loserId === player.id).length + ' perdidos)').join(' · ')}</p>}
       <RecordStake group={group} products={products} locked={locked} act={act} availableTokens={availableTokens} />
     </div>
-    {pending.length > 0 && (size ? <AssignTeamLosses group={group} size={size} accounts={accounts}
+    {differentValues ? <p role="status">Hay chicos pendientes de distinto valor. Abre cada chico en la lista y selecciona quién perdió.</p>
+      : pending.length > 0 && (size ? <AssignTeamLosses group={group} size={size} accounts={accounts}
       locked={locked} act={act} pending={pending.length} /> : <form onSubmit={save}>
       <div className="section-title"><h4>Asignar chicos perdidos</h4><strong>{pending.length} por asignar</strong></div>
       <fieldset className="plain-fieldset" disabled={locked}>
@@ -401,7 +403,7 @@ function RedeemedProducts({ redemption }: { redemption: Redemption }) {
   ))}</ul>;
 }
 
-function AssignStakedRound({ group, round, accounts, locked, act }: {
+function AssignRound({ group, round, accounts, locked, act }: {
   group: Group; round: Round; accounts: Account[]; locked?: boolean; act: Action;
 }) {
   const [loser, setLoser] = useState('');
@@ -468,8 +470,8 @@ function RoundHistory({ group, accounts = [], locked, onRedeem, act, availableTo
             onClick={() => void act('tejo/' + group.id + '/stake-delivery', { roundId: round.id }, 'Productos de la apuesta entregados.')}>
             Registrar entrega de la apuesta del chico {round.number}
           </button> : <p>Productos de la apuesta entregados.</p>}
-          {isPending(round) && act && <AssignStakedRound group={group} round={round} accounts={accounts} locked={locked} act={act} />}
         </>}
+        {round.flexible && isPending(round) && act && <AssignRound group={group} round={round} accounts={accounts} locked={locked} act={act} />}
         {round.benefits.length > 0 && <details className="space-above"><summary>Fichas y consumos · {round.benefits.filter((benefit) => !benefit.issuedAt && !benefit.redemption).length} pendientes</summary>
         <ul className="tejo-benefits">{round.benefits.map((benefit) => (
           <li key={benefit.accountId}>

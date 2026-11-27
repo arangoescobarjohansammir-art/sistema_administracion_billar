@@ -185,7 +185,7 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
   function stakeDescription(roundId: number | null) {
     if (roundId === null) return '';
     const parts = productsByRound.all(roundId).map(({ quantity, inputUnit, label }) => quantity + ' ' + inputUnit + ' de ' + label);
-    return ' · apuesta: ' + parts.join(', ');
+    return parts.length ? ' · apuesta: ' + parts.join(', ') : '';
   }
 
   function deliverStake(session: number, fields: Record<string, unknown>) {
@@ -232,9 +232,11 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     'WHERE played.session_id = ? AND played.loser_slot IS NULL AND result.round_id IS NULL',
   ].join(' ');
   const hasProducts = 'EXISTS (SELECT 1 FROM tejo_round_products WHERE round_id = played.id)';
-  const assignmentScope = ' AND ((? IS NULL AND NOT ' + hasProducts + ') OR (played.id = ? AND ' + hasProducts + '))';
+  const assignmentScope = ' AND ((? IS NULL AND NOT ' + hasProducts + ') OR played.id = ?)';
   const roundTotal = 'played.rate * played.player_count + COALESCE((' +
     'SELECT SUM(quantity * units_per_input * unit_price) FROM tejo_round_products WHERE round_id = played.id), 0)';
+  const pendingTokenValues = database.prepare('SELECT COUNT(DISTINCT played.rate * played.player_count) AS valuesCount ' +
+    pendingRounds + ' AND NOT ' + hasProducts);
 
   function assignTeams(sessionId: number, teamSize: number, heading: string, fields: Record<string, unknown>, roundId: number | null) {
     if (!Array.isArray(fields.losses) || !fields.losses.length || fields.losses.length > 2) {
@@ -296,6 +298,9 @@ export function flexibleTejo(database: DatabaseSync, accounts: Accounts, availab
     const session = open(sessionId);
     const { roundId = null } = fields;
     if (roundId !== null && !isId(roundId)) throw new ValidationError(400, 'Selecciona un chico.');
+    if (roundId === null && Number(pendingTokenValues.get(sessionId)?.valuesCount) > 1) {
+      throw new ValidationError(400, 'Hay chicos pendientes de distinto valor. Asigna el perdedor de cada chico por separado.');
+    }
     const heading = courtLabel(session.courtType as TejoType, Number(session.courtNumber));
     const teamSize = teamSizeFor(sessionId);
     if (teamSize) return assignTeams(sessionId, teamSize, heading, fields, roundId);

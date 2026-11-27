@@ -17,7 +17,7 @@
 ## Tejo y fichas
 
 - Hay seis canchas de maxitejo y seis de tejo largo. Cada cancha lleva su propio grupo y contador de chicos. El historial conserva el grupo, la cancha, el número de chico y quién perdió.
-- Se puede abrir un grupo con jugadores numerados sin crear cuentas. Se registran los chicos pendientes y luego la cantidad perdida por jugador. El nombre se pide para cargar la deuda. El sistema asigna los cargos a los chicos pendientes en que ese jugador participó. Un jugador que llega después no cambia el importe de chicos anteriores.
+- Se puede abrir un grupo con jugadores numerados sin crear cuentas. El nombre se pide al cargar la deuda. Si los chicos pendientes por fichas tienen el mismo valor, se pueden asignar por cantidad de pérdidas. Si tienen distintos valores, se elige el perdedor en cada chico. Solo se puede asignar una pérdida a quien participó. Un jugador que llega después no cambia el importe de chicos anteriores.
 
 - El tejo se cobra por chico. En un chico por fichas, quien pierde paga $4.000 por participante. Cada participante, incluido quien pierde, tiene derecho a una ficha o a consumir hasta $4.000 en productos.
 - En 2 vs 2, 3 vs 3 y 4 vs 4, los equipos mantienen su tamaño durante el grupo y los integrantes perdedores dividen el importe del chico en partes iguales. Para chicos por fichas, los totales son $16.000, $24.000 y $32.000 respectivamente, con $8.000 a cargo de cada perdedor. Se pueden registrar los chicos pendientes y después indicar cuántos perdió cada equipo. El sistema aplica esas cantidades a los chicos pendientes por fichas en orden de registro, primero las del equipo A y luego las del B.

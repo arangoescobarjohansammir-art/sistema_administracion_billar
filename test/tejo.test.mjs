@@ -46,8 +46,7 @@ test('registra productos y canastas como apuesta y separa su entrega de las fich
     .map((player, index) => ({ playerId: player.id, name: 'Jugador de prueba ' + (start + index + 1) }));
   const lossesA = [{ team: 'A', count: 1, players: members(0) }];
   const lossesB = [{ team: 'B', count: 1, players: members(2) }];
-  await post(path + '/assign', 400, { roundId: regular.id, losses: lossesA });
-  await post(path + '/assign', 201, { losses: lossesA });
+  await post(path + '/assign', 201, { roundId: regular.id, losses: lossesA });
   await post(path + '/assign', 400, { losses: lossesB });
   await post(path + '/assign', 201, { roundId: mixed.id, losses: lossesB });
   await post(path + '/assign', 201, { roundId: wager.id, losses: lossesA });
@@ -413,7 +412,7 @@ test('acepta jugadores sin nombre y asigna los chicos por cantidad después de j
   await post(path + '/record', 201, secondRequest);
   await post(path + '/record', 200, secondRequest);
   const third = await post(path + '/guest', 201, {});
-  await post(path + '/record', 201, { issueAll: true });
+  const thirdRound = await post(path + '/record', 201, { issueAll: true });
   assert.deepEqual(await json('/api/accounts', 200), []);
   assert.equal((await json('/api/cash', 200)).active.totals.salesTotal, 0);
   await post(path + '/close', 409, {});
@@ -422,9 +421,11 @@ test('acepta jugadores sin nombre y asigna los chicos por cantidad después de j
   assert.deepEqual(await json('/api/accounts', 200), []);
   await stop();
   await start();
+  await post(path + '/assign', 201, { roundId: thirdRound.id, losses: [
+    { playerId: third.id, count: 1, name: 'Andrés' },
+  ] });
   const settlement = { requestId: randomUUID(), losses: [
     { playerId: one.id, count: 2, name: 'Laura' },
-    { playerId: third.id, count: 1, name: 'Andrés' },
   ] };
   await post(path + '/assign', 201, settlement);
   await post(path + '/assign', 200, settlement);
@@ -437,6 +438,42 @@ test('acepta jugadores sin nombre y asigna los chicos por cantidad después de j
   group = (await json('/api/tejo', 200)).active.find((item) => item.id === id);
   assert.deepEqual(group.rounds.map(({ loser, total }) => [loser, total]), [['Andrés', 12000], ['Laura', 8000], ['Laura', 8000]]);
   await post(path + '/close', 201, {});
+});
+
+test('identifica el chico perdido cuando los pendientes tienen distintos importes', { timeout: 20000 }, async (t) => {
+  const { start, json, cleanup, openShift } = await testServer();
+  t.after(cleanup);
+  await start();
+  await openShift();
+  const post = (path, status, data) => json(path, status, 'POST', { ...data, requestId: data.requestId ?? randomUUID() });
+  const { id } = await post('/api/tejo', 201, { courtType: 'maxi', courtNumber: 1, playerCount: 2 });
+  const path = '/api/tejo/' + id;
+  const first = await post(path + '/record', 201, { issueAll: true });
+  const guest = await post(path + '/guest', 201, {});
+  const second = await post(path + '/record', 201, { issueAll: true });
+  const { players: [one, two] } = (await json('/api/tejo', 200)).active[0];
+  const losses = [
+    { playerId: one.id, count: 1, name: 'Ana' },
+    { playerId: two.id, count: 1, name: 'Luis' },
+  ];
+  const blocked = await post(path + '/assign', 400, { losses });
+  assert.match(blocked.error, /chicos pendientes de distinto valor/);
+  await post(path + '/assign', 400, { roundId: first.id, losses: [{ playerId: guest.id, count: 1, name: 'Invitado' }] });
+  assert.deepEqual(await json('/api/accounts', 200), []);
+  assert.equal((await json('/api/cash', 200)).active.totals.salesTotal, 0);
+
+  const assignment = { roundId: second.id, losses: [losses[1]], requestId: randomUUID() };
+  await post(path + '/assign', 201, assignment);
+  await post(path + '/assign', 200, assignment);
+  await post(path + '/assign', 400, { ...assignment, requestId: randomUUID() });
+  await post(path + '/assign', 201, { roundId: first.id, losses: [losses[0]] });
+  const { rounds } = (await json('/api/tejo', 200)).active[0];
+  assert.deepEqual(rounds.map(({ id, loser, total }) => [id, loser, total]),
+    [[second.id, 'Luis', 12_000], [first.id, 'Ana', 8000]]);
+  assert.deepEqual((await json('/api/accounts', 200)).map(({ name, balance }) => [name, balance]),
+    [['Luis', 12_000], ['Ana', 8000]]);
+  const { salesTotal, tokensIssued } = (await json('/api/cash', 200)).active.totals;
+  assert.deepEqual([salesTotal, tokensIssued], [20_000, 5]);
 });
 
 test('continúa una cancha abierta antes de la actualización, con sus chicos y fichas pendientes', { timeout: 20000 }, async (t) => {
