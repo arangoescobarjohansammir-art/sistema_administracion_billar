@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
-import { timeCharge } from '../dist/shared/billiard.js';
+import { roundedTimeCharge, timeCharge } from '../dist/shared/billiard.js';
 import { testServer } from './support/local-server.mjs';
 
 const noPayment = { cash: 0, transfer: 0, tokens: 0 };
@@ -39,7 +39,7 @@ test('reanuda la mesa sin cobrar la pausa y conserva sus horas', { timeout: 2000
   assert.equal(ended.startedAt, began);
   assert.ok(ended.stoppedAt > began + 600_000);
   assert.equal(ended.pausedMs, resumed.pausedMs);
-  assert.equal(ended.time, timeCharge(ended.seconds));
+  assert.equal(ended.time, roundedTimeCharge(ended.seconds));
 });
 
 test('conserva la mesa, reparte tiempo y consumos, y descuenta inventario solo al entregar', { timeout: 20000 }, async (t) => {
@@ -135,4 +135,59 @@ test('conserva la mesa, reparte tiempo y consumos, y descuenta inventario solo a
   assert.equal(direct.payment.tokens, 1);
   assert.deepEqual((await json(stock, 200)).map((row) => row.units), [-3, 8]);
   await json('/api/billiards', 201, 'POST', { table: 6, requestId: randomUUID() });
+});
+
+test('redondea el tiempo al cobrar y conserva los consumos y las liquidaciones anteriores', { timeout: 20000 }, async (t) => {
+  assert.deepEqual([3088, 3240, 3150, 149, 150, 3600].map((seconds) => roundedTimeCharge(seconds)),
+    [5000, 5500, 5500, 0, 500, 6000]);
+  assert.equal(timeCharge(3088), 5147);
+  assert.equal(timeCharge(3240), 5400);
+  const { start, stop, json, cleanup, databasePath, openShift } = await testServer();
+  t.after(cleanup);
+  await start();
+  const { id: shift } = await openShift();
+  await stop();
+  const db = new DatabaseSync(databasePath);
+  try {
+    db.exec(`
+      INSERT INTO billiard_sessions (id, table_number, rate, started_at, stopped_at, closed_at)
+      VALUES (1, 1, 6000, 1700000000000, 1700003088000, 1700003088000),
+             (2, 2, 6000, 1700000000000, 1700003088000, NULL),
+             (3, 3, 6000, 1700000000000, 1700003240000, NULL),
+             (4, 4, 6000, 1700000000000, 1700000149000, NULL);
+    `);
+  } finally { db.close(); }
+  await start();
+  const post = (path, status, body) => json(path, status, 'POST', { requestId: randomUUID(), ...body });
+  const product = await post('/api/products', 201, {
+    name: 'Gaseosa', brand: '', presentation: 'Botella', price: 4123, packageName: '', unitsPerPackage: 1, active: true,
+  });
+  await post('/api/products/' + product.id + '/movements', 201, { direction: 'in', unit: 'unit', quantity: 2, reason: 'Saldo inicial' });
+  await post('/api/billiards/3/items', 201, { productId: product.id, quantity: 1, unitPrice: 4123 });
+  const { active, recent } = await json('/api/billiards', 200);
+  assert.deepEqual(active.map(({ time, total }) => [time, total]), [[5000, 5000], [5500, 9623], [0, 0]]);
+  assert.equal(recent[0].total, 5147);
+  const { pendingGames } = await json('/api/cash/' + shift, 200);
+  assert.deepEqual(pendingGames.billiards.map(({ time, products }) => [time, products]), [[5000, 0], [5500, 4123], [0, 0]]);
+
+  const cash = (cash) => ({ cash, transfer: 0, tokens: 0 });
+  const payTime = (time) => ({ accountId: null, time, items: [], payment: cash(time) });
+  await post('/api/billiards/2/close', 400, { participants: [payTime(5147)] });
+  await post('/api/billiards/2/close', 201, { participants: [payTime(5000)] });
+  const client = await post('/api/accounts', 201, { name: 'Cliente de prueba' });
+  await post('/api/billiards/3/close', 201, { participants: [
+    payTime(2500),
+    { accountId: client.id, time: 3000, items: [{ id: active[1].items[0].id, amount: 4123 }], payment: noPayment },
+  ] });
+  await post('/api/billiards/4/close', 201, { participants: [] });
+  const { totals } = await json('/api/cash/' + shift, 200);
+  assert.deepEqual([totals.salesTotal, totals.cashReceived, totals.pendingBalance], [14623, 7500, 7123]);
+  const { account, sales } = await json('/api/accounts/' + client.id, 200);
+  assert.equal(account.balance, 7123);
+  assert.deepEqual(sales[0].items.map(({ unitPrice }) => unitPrice), [3000, 4123]);
+  await stop();
+  await start();
+  const history = (await json('/api/billiards', 200)).recent;
+  assert.deepEqual(history.sort((a, b) => a.id - b.id).map(({ time, total }) => [time, total]),
+    [[5147, 5147], [5000, 5000], [5500, 9623], [0, 0]]);
 });

@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
-import { billiardRate, billiardTables, durationLabel, elapsedSeconds, timeCharge } from '../shared/billiard.js';
+import { billiardRate, billiardTables, durationLabel, elapsedSeconds, roundedTimeCharge, timeCharge } from '../shared/billiard.js';
 import { type createAccounts, paymentFields, paymentTotal, record, ValidationError, whole } from './accounts.js';
 import { readJson, sendJson } from './http.js';
 import { findProduct, recordInventoryMovement } from './inventory.js';
@@ -70,9 +70,12 @@ export function createBilliards(database: DatabaseSync, accounts: Accounts) {
   if (!columns.has('paused_ms')) {
     database.exec('ALTER TABLE billiard_sessions ADD COLUMN paused_ms INTEGER NOT NULL DEFAULT 0 CHECK (paused_ms >= 0)');
   }
+  if (!columns.has('settled_time')) {
+    database.exec('ALTER TABLE billiard_sessions ADD COLUMN settled_time INTEGER CHECK (settled_time >= 0)');
+  }
   const sessions = [
     'SELECT id, table_number AS tableNumber, rate, started_at AS startedAt, stopped_at AS stoppedAt,',
-    'closed_at AS closedAt, canceled_at AS canceledAt, paused_ms AS pausedMs FROM billiard_sessions',
+    'closed_at AS closedAt, canceled_at AS canceledAt, paused_ms AS pausedMs, settled_time AS settledTime FROM billiard_sessions',
   ].join(' ');
 
   function sessionItems(id: number): BilliardItem[] {
@@ -93,7 +96,11 @@ export function createBilliards(database: DatabaseSync, accounts: Accounts) {
   function describe(session: Record<string, unknown>, now: number) {
     const seconds = elapsedSeconds(Number(session.startedAt), Number(session.stoppedAt ?? now), Number(session.pausedMs));
     const items = sessionItems(Number(session.id));
-    const time = session.canceledAt === null ? timeCharge(seconds, Number(session.rate)) : 0;
+    const rate = Number(session.rate);
+    let time = timeCharge(seconds, rate);
+    if (session.canceledAt !== null) time = 0;
+    else if (session.closedAt !== null) time = Number(session.settledTime ?? time);
+    else if (session.stoppedAt !== null) time = roundedTimeCharge(seconds, rate);
     return { ...session, seconds, time, total: time + items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0), items };
   }
 
@@ -202,7 +209,8 @@ export function createBilliards(database: DatabaseSync, accounts: Accounts) {
       }
       if (paymentTotal(participant.payment) > 0) accounts.insertPayment(participant.accountId, saleId, participant.payment, createdAt);
     }
-    database.prepare('UPDATE billiard_sessions SET closed_at = ? WHERE id = ?').run(closedAt, id);
+    database.prepare('UPDATE billiard_sessions SET closed_at = ?, settled_time = ? WHERE id = ?')
+      .run(closedAt, details.time, id);
     return id;
   }
 

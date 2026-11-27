@@ -308,7 +308,7 @@ export function Billiards() {
   const session = dashboard?.active.find((entry) => entry.tableNumber === table);
   const locked = busy || Boolean(loadError);
   const seconds = session ? elapsedSeconds(session.startedAt, session.stoppedAt ?? now, session.pausedMs) : 0;
-  const liveTime = session ? timeCharge(seconds, session.rate) : 0;
+  const time = session ? session.stoppedAt === null ? timeCharge(seconds, session.rate) : session.time : 0;
   const consumption = session?.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) ?? 0;
 
   return (
@@ -343,9 +343,9 @@ export function Billiards() {
             : <>
               <SessionHours session={session} />
               <div className="totals">
-                <span>Tiempo <strong>{money.format(liveTime)}</strong></span>
+                <span>{session.stoppedAt === null ? 'Tiempo' : 'Tiempo redondeado'} <strong>{money.format(time)}</strong></span>
                 <span>Consumos <strong>{money.format(consumption)}</strong></span>
-                <span>Total <strong>{money.format(liveTime + consumption)}</strong></span>
+                <span>Total <strong>{money.format(time + consumption)}</strong></span>
               </div>
               {session.items.length > 0 && <ul className="sale-lines">{session.items.map((item) => (
                 <li key={item.id}><span>{item.quantity} × {item.label}</span><strong>{money.format(item.quantity * item.unitPrice)}</strong></li>

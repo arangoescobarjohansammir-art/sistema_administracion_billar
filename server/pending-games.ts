@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { elapsedSeconds, timeCharge } from '../shared/billiard.js';
+import { elapsedSeconds, roundedTimeCharge, timeCharge } from '../shared/billiard.js';
 import type { PendingGames } from '../shared/pending-games.js';
 
 export function createPendingGames(database: DatabaseSync) {
@@ -33,11 +33,13 @@ export function createPendingGames(database: DatabaseSync) {
     const unassigned = rounds.all();
     const games: PendingGames = {
       capturedAt: new Date(now).toISOString(),
-      billiards: openTables.map((row) => ({
-        sessionId: Number(row.id), table: Number(row.table_number), products: Number(row.products),
-        running: row.stopped_at === null,
-        time: timeCharge(elapsedSeconds(Number(row.started_at), Number(row.stopped_at ?? now), Number(row.paused_ms)), Number(row.rate)),
-      })),
+      billiards: openTables.map((row) => {
+        const running = row.stopped_at === null;
+        const seconds = elapsedSeconds(Number(row.started_at), Number(row.stopped_at ?? now), Number(row.paused_ms));
+        const charge = running ? timeCharge : roundedTimeCharge;
+        return { sessionId: Number(row.id), table: Number(row.table_number), products: Number(row.products),
+          running, time: charge(seconds, Number(row.rate)) };
+      }),
       tejo: unassigned.map((row) => ({
         roundId: Number(row.id), courtType: row.court_type === 'maxi' ? 'maxi' : 'largo',
         court: Number(row.court_number), round: Number(row.number), amount: Number(row.amount),

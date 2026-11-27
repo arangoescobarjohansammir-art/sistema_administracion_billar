@@ -10,6 +10,7 @@
 
 - Hay seis mesas. Cada mesa cobra $6.000 por hora de juego, equivalentes a $100 por minuto. Se guarda la hora de inicio y de fin para conservar el tiempo si se cierra la pantalla.
 - Antes de liquidar, una mesa detenida puede reanudarse. Conserva su hora de inicio y el cobro excluye los intervalos en que estuvo detenida.
+- Al liquidar, el importe del tiempo se redondea al múltiplo de $500 más cercano. Si queda justo en la mitad, se redondea hacia arriba. Los consumos se suman por su importe exacto.
 - La cuenta de la mesa reúne el tiempo y los productos que se le hayan anotado. Se puede cobrar a una sola persona o repartir con importes iguales o distintos. El cajero puede asignar consumos y porciones del tiempo a personas diferentes.
 - Si los jugadores apuestan un producto, su valor y el tiempo pueden quedar a cargo de uno o varios perdedores, según el acuerdo de esa partida.
 - Cada persona puede pagar su parte al momento, abonarla o dejarla pendiente a su nombre. La suma de las partes debe coincidir con el total de la mesa.
