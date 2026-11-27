@@ -38,6 +38,7 @@
 - Se conserva el detalle de cargos y abonos. Los cobros se incluyen en el turno en que se reciben, incluso cuando pagan una deuda anterior. El cierre distingue lo vendido, lo cobrado por cada medio y lo que queda pendiente.
 - El administrador puede anular abonos independientes del turno abierto con motivo y confirmación de la devolución o del error de registro. La anulación devuelve el saldo a la cuenta y ajusta los totales de efectivo, transferencias y fichas del turno.
 - El administrador puede trasladar un cargo pendiente de tejo del turno abierto a otra cuenta, con motivo. El movimiento conserva el registro de la cancha, el chico, los participantes y las entregas.
+- El administrador puede trasladar una parte fiada de billar del turno abierto a otra cuenta, con motivo. El cargo conserva su importe y el vínculo con la mesa. Si esa parte tiene un pago asociado o supera el saldo pendiente de la cuenta, se bloquea el traslado.
 
 ## Catálogo e inventario
 

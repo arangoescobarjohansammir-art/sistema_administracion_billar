@@ -4,18 +4,26 @@ import { AccountPicker } from './CustomerLookup';
 import { api, message, money, PaymentBreakdown, totalPayment, useOperation, type Account, type Payment } from './Accounts';
 
 type PaymentEntry = Omit<Payment, 'saleId'> & { customer: string; voidedAt: string | null; voidReason: string | null };
-type TejoEntry = {
+type ChargeEntry = {
   id: number; accountId: number; customer: string; total: number; createdAt: string;
-  chico: number; courtType: TejoType; courtNumber: number; hasPayment: 0 | 1;
+  hasPayment: 0 | 1;
+} & (
+  { chico: number; courtType: TejoType; courtNumber: number } |
+  { tableNumber: number; sessionId: number }
+);
+type Entry = PaymentEntry | ChargeEntry;
+type Mode = 'payments' | 'tejo' | 'billiards';
+const descriptions = {
+  payments: { title: 'Anular abonos', help: 'Anula un abono del turno abierto. Si corresponde, después puedes registrar el abono correcto en Cuentas.' },
+  tejo: { title: 'Corregir cargos de tejo', help: 'Traslada un cargo de tejo del turno abierto a la cuenta correcta.' },
+  billiards: { title: 'Corregir cargos de billar', help: 'Traslada una parte fiada de una mesa liquidada en el turno abierto a la cuenta correcta.' },
 };
-type Entry = PaymentEntry | TejoEntry;
-type Mode = 'payments' | 'tejo';
 type Page = { shiftId: number | null; entries: Entry[] };
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'America/Bogota' });
 const isPayment = (entry: Entry): entry is PaymentEntry => 'cash' in entry;
 
-function CorrectionForm({ entry, accounts, onDone, onCancel }: {
-  entry: Entry; accounts: Account[]; onDone: (status: string) => void; onCancel: () => void;
+function CorrectionForm({ mode, entry, accounts, onDone, onCancel }: {
+  mode: Mode; entry: Entry; accounts: Account[]; onDone: (status: string) => void; onCancel: () => void;
 }) {
   const [account, setAccount] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,9 +38,9 @@ function CorrectionForm({ entry, accounts, onDone, onCancel }: {
     setBusy(true);
     setError('');
     try {
-      const result = await write(payment ? 'corrections/payments/' + entry.id + '/void' : 'corrections/tejo/' + entry.id + '/move', {
+      const result = await write('corrections/' + mode + '/' + entry.id + (payment ? '/void' : '/move'), {
         reason: fields.get('reason'), confirmed: fields.has('confirmed'), accountId: payment ? undefined : Number(account),
-      });
+      }, mode === 'billiards' ? 'Traslado de cargo de billar #' + entry.id : undefined);
       onDone(payment ? 'Abono #' + entry.id + ' anulado.' : 'Cargo trasladado a la cuenta correcta. Nuevo cargo #' + result.id + '.');
     } catch (error) {
       setError(message(error));
@@ -67,7 +75,7 @@ export function AccountCorrections({ mode }: { mode: Mode }) {
   const [more, setMore] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
-  const title = mode === 'payments' ? 'Anular abonos' : 'Corregir cargos de tejo';
+  const { title, help } = descriptions[mode];
 
   async function load(before?: number) {
     setBusy(true);
@@ -75,7 +83,7 @@ export function AccountCorrections({ mode }: { mode: Mode }) {
     try {
       const [result, people] = await Promise.all([
         api<Page>('corrections/' + mode + (before ? '?before=' + before : '')),
-        mode === 'tejo' && !before ? api<Account[]>('accounts') : Promise.resolve(null),
+        mode !== 'payments' && !before ? api<Account[]>('accounts') : Promise.resolve(null),
       ]);
       setPage((previous) => before && previous?.shiftId === result.shiftId
         ? { ...result, entries: [...previous.entries, ...result.entries] } : result);
@@ -93,9 +101,7 @@ export function AccountCorrections({ mode }: { mode: Mode }) {
   return <section aria-labelledby="account-correction-title">
     <div className="section-title"><h3 id="account-correction-title">{title}</h3>
       <button type="button" className="secondary" disabled={busy} onClick={() => void load()}>Actualizar</button></div>
-    <p>{mode === 'payments'
-      ? 'Anula un abono del turno abierto. Si corresponde, después puedes registrar el abono correcto en Cuentas.'
-      : 'Traslada un cargo de tejo del turno abierto a la cuenta correcta.'}</p>
+    <p>{help}</p>
     {error && <p role="alert">{error}</p>}
     {status && <p role="status">{status}</p>}
     {!page && busy && <p role="status">Consultando movimientos…</p>}
@@ -110,10 +116,11 @@ export function AccountCorrections({ mode }: { mode: Mode }) {
           <strong>{money.format(payment ? totalPayment(entry, entry.tokenValue) : entry.total)}</strong></div>
         <time dateTime={entry.createdAt}>{date.format(new Date(entry.createdAt))}</time>
         {payment ? <p><PaymentBreakdown payment={{ ...entry, saleId: null }} /></p>
+          : 'tableNumber' in entry ? <p>Mesa {entry.tableNumber} · Liquidación #{entry.sessionId}</p>
           : <p>{courtLabel(entry.courtType, entry.courtNumber)} · chico {entry.chico}</p>}
         {payment && entry.voidedAt ? <p>Anulado el {date.format(new Date(entry.voidedAt))} · {entry.voidReason}</p>
           : !payment && entry.hasPayment ? <p>Este cargo tiene un cobro asociado.</p>
-          : selected === entry.id ? <CorrectionForm key={entry.id} entry={entry} accounts={accounts}
+          : selected === entry.id ? <CorrectionForm key={entry.id} mode={mode} entry={entry} accounts={accounts}
             onCancel={() => setSelected(null)} onDone={(notice) => {
               setSelected(null); setStatus(notice); void load();
             }} />

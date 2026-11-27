@@ -6,6 +6,8 @@ import type { createCash } from './cash.js';
 import { activeShiftId } from './cash-ledger.js';
 import { readJson, sendJson } from './http.js';
 
+type ChargeScope = 'tejo' | 'billiards';
+
 export function createAccountCorrections(database: DatabaseSync, accounts: ReturnType<typeof createAccounts>,
   cash: ReturnType<typeof createCash>, audit: Audit) {
   const payments = `
@@ -32,10 +34,22 @@ export function createAccountCorrections(database: DatabaseSync, accounts: Retur
     JOIN customer_accounts customer ON customer.id = sale.account_id
     WHERE tracked.shift_id = ?
   `;
+  const billiardCharges = `
+    SELECT sale.id, sale.account_id AS accountId, customer.name AS customer, sale.total, sale.created_at AS createdAt,
+      'billiards' AS source, session.table_number AS tableNumber, session.id AS sessionId,
+      EXISTS (SELECT 1 FROM account_payments WHERE sale_id = sale.id) AS hasPayment
+    FROM billiard_shares share JOIN valid_sales sale ON sale.id = share.sale_id
+    JOIN cash_shift_sales tracked ON tracked.sale_id = sale.id
+    JOIN billiard_sessions session ON session.id = share.session_id
+    JOIN customer_accounts customer ON customer.id = sale.account_id
+    WHERE tracked.shift_id = ? AND session.closed_at IS NOT NULL AND session.canceled_at IS NULL
+  `;
+  const chargesFor = { tejo: tejoCharges, billiards: billiardCharges };
   const updateCharge = {
     legacy: database.prepare('UPDATE tejo_rounds SET sale_id = ? WHERE sale_id = ?'),
     individual: database.prepare('UPDATE tejo_played SET sale_id = ? WHERE sale_id = ?'),
     team: database.prepare('UPDATE tejo_team_charges SET sale_id = ? WHERE sale_id = ?'),
+    billiards: database.prepare('UPDATE billiard_shares SET sale_id = ? WHERE sale_id = ?'),
   };
 
   function voidPayment(request: IncomingMessage, shiftId: number, id: number, reason: string) {
@@ -48,9 +62,9 @@ export function createAccountCorrections(database: DatabaseSync, accounts: Retur
     return id;
   }
 
-  function moveCharge(request: IncomingMessage, shiftId: number, id: number, targetId: number, reason: string) {
-    const charge = database.prepare(tejoCharges + ' AND sale.id = ?').get(shiftId, id);
-    if (!charge) throw new ValidationError(409, 'El cargo del chico debe estar vigente y pertenecer al turno abierto.');
+  function moveCharge(request: IncomingMessage, scope: ChargeScope, shiftId: number, id: number, targetId: number, reason: string) {
+    const charge = database.prepare(chargesFor[scope] + ' AND sale.id = ?').get(shiftId, id);
+    if (!charge) throw new ValidationError(409, 'El cargo debe estar vigente y pertenecer al turno abierto.');
     if (charge.accountId === targetId) throw new ValidationError(400, 'Elige una cuenta diferente.');
     const amount = Number(charge.total);
     if (charge.hasPayment || Number(accounts.accountById(Number(charge.accountId)).balance) < amount) {
@@ -66,24 +80,26 @@ export function createAccountCorrections(database: DatabaseSync, accounts: Retur
     updateCharge[charge.source as keyof typeof updateCharge].run(newSale, id);
     const detail = 'Cargo #' + id + ' de ' + charge.customer + ' trasladado a ' + target.name + ' como cargo #' + newSale + ' · ' + reason;
     database.prepare('INSERT INTO sale_voids VALUES (?, ?, ?, 0)').run(id, now, detail);
-    audit.record(request, 'tejo_charge_move', id, detail);
+    if (scope === 'billiards') database.prepare('INSERT INTO billiard_charge_moves VALUES (?, ?)').run(id, newSale);
+    audit.record(request, scope === 'billiards' ? 'billiard_charge_move' : 'tejo_charge_move', id, detail);
     return newSale;
   }
 
   return async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     try {
-      if (request.method === 'GET' && (path === '/api/corrections/payments' || path === '/api/corrections/tejo')) {
+      const page = /^\/api\/corrections\/(payments|tejo|billiards)$/.exec(path);
+      if (request.method === 'GET' && page) {
         const shiftId = activeShiftId(database);
         const before = Number(new URL(request.url ?? '/', 'http://localhost').searchParams.get('before') ?? Number.MAX_SAFE_INTEGER);
         const cursor = whole(before, 1, Number.MAX_SAFE_INTEGER) ? before : Number.MAX_SAFE_INTEGER;
-        const query = path.endsWith('/payments')
+        const query = page[1] === 'payments'
           ? payments + ' AND payment.id < ? ORDER BY payment.id DESC LIMIT 50'
-          : tejoCharges + ' AND sale.id < ? ORDER BY sale.id DESC LIMIT 50';
+          : chargesFor[page[1] as ChargeScope] + ' AND sale.id < ? ORDER BY sale.id DESC LIMIT 50';
         return sendJson(response, 200, { shiftId, entries: shiftId === null ? [] : database.prepare(query).all(shiftId, cursor) });
       }
       const payment = /^\/api\/corrections\/payments\/([1-9]\d*)\/void$/.exec(path);
-      const match = payment ?? /^\/api\/corrections\/tejo\/([1-9]\d*)\/move$/.exec(path);
-      const id = Number(match?.[1]);
+      const charge = /^\/api\/corrections\/(tejo|billiards)\/([1-9]\d*)\/move$/.exec(path);
+      const id = Number(payment?.[1] ?? charge?.[2]);
       if (request.method !== 'POST' || !whole(id, 1, Number.MAX_SAFE_INTEGER)) {
         throw new ValidationError(404, 'Ruta de correcciones no encontrada.');
       }
@@ -97,7 +113,8 @@ export function createAccountCorrections(database: DatabaseSync, accounts: Retur
       const result = accounts.writeOnce(input.requestId, JSON.stringify([path, reason, payment ? null : targetId]), () => {
         const shiftId = activeShiftId(database);
         if (shiftId === null) throw new ValidationError(409, 'Abre un turno de caja para registrar la corrección.');
-        return payment ? voidPayment(request, shiftId, id, reason) : moveCharge(request, shiftId, id, Number(targetId), reason);
+        return payment ? voidPayment(request, shiftId, id, reason)
+          : moveCharge(request, charge![1] as ChargeScope, shiftId, id, Number(targetId), reason);
       });
       return sendJson(response, result.repeated ? 200 : 201, result);
     } catch (error) {

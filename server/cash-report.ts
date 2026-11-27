@@ -45,13 +45,15 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
   const id = Number(data.shift.id);
   const sales = database.prepare([
     'SELECT sales.id, sales.total, sales.created_at AS createdAt, customer_accounts.name, v.reason AS voidReason,',
+    'move.replacement_sale_id AS replacementSaleId,',
     '(SELECT share.sale_id FROM sale_credit_shares share WHERE share.share_sale_id = sales.id) AS splitFrom,',
     'EXISTS (SELECT 1 FROM sale_credit_shares share WHERE share.sale_id = sales.id) AS splitPayment,',
     "(SELECT actor_name FROM cash_audit WHERE kind = 'sale' AND target_id = sales.id ORDER BY id LIMIT 1) AS seller,",
-    "(SELECT actor_name FROM cash_audit WHERE kind IN ('sale_void', 'tejo_charge_move') AND target_id = sales.id ORDER BY id LIMIT 1) AS voidedBy",
+    "(SELECT actor_name FROM cash_audit WHERE kind IN ('sale_void', 'tejo_charge_move', 'billiard_charge_move') AND target_id = sales.id ORDER BY id LIMIT 1) AS voidedBy",
     'FROM cash_shift_sales tracked JOIN sales ON sales.id = tracked.sale_id',
     'LEFT JOIN customer_accounts ON customer_accounts.id = sales.account_id',
     'LEFT JOIN sale_voids v ON v.sale_id = sales.id',
+    'LEFT JOIN billiard_charge_moves move ON move.original_sale_id = sales.id',
     'WHERE tracked.shift_id = ? ORDER BY sales.id',
   ].join(' ')).all(id);
   const soldLines = database.prepare([
@@ -63,12 +65,13 @@ function detailTables(database: DatabaseSync, data: ReportData): DetailTable[] {
       ...soldLines.all(Number(sale.id)).map((row) => text(row.quantity) + ' x ' + text(row.label) + ' (' + money(row.total) + ')'),
       ...allocatedLines.all(Number(sale.id)).map((row) => text(row.label) + ' (' + money(row.total) + ')'),
     ];
-    return [date(sale.createdAt) + '\nVenta #' + sale.id + (sale.voidReason ? '\nAnulada' : ''),
+    const correction = sale.replacementSaleId ? 'Traslado de cuenta' : 'Anulación';
+    return [date(sale.createdAt) + '\nVenta #' + sale.id + (sale.voidReason ? sale.replacementSaleId ? '\nTrasladada' : '\nAnulada' : ''),
       [
         text(sale.name ?? 'Sin nombre'), sale.seller ? 'Registró: ' + text(sale.seller) : '',
         sale.splitPayment ? 'Parte pagada de la venta con fiado repartido' : '',
         sale.splitFrom ? 'Parte fiada de la venta #' + text(sale.splitFrom) : '',
-        ...lines, sale.voidReason ? 'Anulación: ' + text(sale.voidReason) + (sale.voidedBy ? ' · ' + text(sale.voidedBy) : '') : '',
+        ...lines, sale.voidReason ? correction + ': ' + text(sale.voidReason) + (sale.voidedBy ? ' · ' + text(sale.voidedBy) : '') : '',
       ].filter(Boolean).join('\n'), money(sale.total)];
   });
 

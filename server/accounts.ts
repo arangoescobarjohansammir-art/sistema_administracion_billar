@@ -104,6 +104,10 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     '  sale_id INTEGER PRIMARY KEY REFERENCES sales(id), created_at TEXT NOT NULL, reason TEXT NOT NULL,',
     '  stock_returned INTEGER NOT NULL CHECK (stock_returned IN (0, 1))',
     ') STRICT;',
+    'CREATE TABLE IF NOT EXISTS billiard_charge_moves (',
+    '  original_sale_id INTEGER PRIMARY KEY REFERENCES sale_voids(sale_id),',
+    '  replacement_sale_id INTEGER NOT NULL UNIQUE REFERENCES sales(id)',
+    ') STRICT;',
     'CREATE TABLE IF NOT EXISTS account_payment_voids (',
     '  payment_id INTEGER PRIMARY KEY REFERENCES account_payments(id),',
     '  created_at TEXT NOT NULL, reason TEXT NOT NULL',
@@ -304,7 +308,9 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
 
   function getSales(accountId: number | null) {
     const filter = accountId === null ? ' WHERE account_id IS NULL ORDER BY id DESC LIMIT 30' : ' WHERE account_id = ? ORDER BY id DESC';
-    const sales = database.prepare('SELECT id, total, created_at AS createdAt, (id IN (SELECT sale_id FROM sale_voids)) AS voided FROM sales' + filter)
+    const sales = database.prepare(`SELECT id, total, created_at AS createdAt,
+      (id IN (SELECT sale_id FROM sale_voids)) AS voided,
+      (id IN (SELECT original_sale_id FROM billiard_charge_moves)) AS transferred FROM sales` + filter)
       .all(...(accountId === null ? [] : [accountId]));
     const items = database.prepare('SELECT label, quantity, unit_price AS unitPrice FROM sale_items WHERE sale_id = ? ORDER BY id');
     const allocations = database.prepare('SELECT label, 1 AS quantity, amount AS unitPrice FROM sale_allocated_lines WHERE sale_id = ? ORDER BY id');
@@ -313,6 +319,7 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
       total: Number(sale.total),
       createdAt: String(sale.createdAt),
       voided: Boolean(sale.voided),
+      transferred: Boolean(sale.transferred),
       items: [...items.all(Number(sale.id)), ...allocations.all(Number(sale.id))],
     }));
   }

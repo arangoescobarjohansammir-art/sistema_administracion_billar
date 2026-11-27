@@ -34,6 +34,8 @@ En **Personal → Anular canjes**, el administrador puede anular un canje de fic
 
 En **Personal → Corregir cargos de tejo**, el administrador puede trasladar un cargo pendiente del turno abierto a otra cuenta. Selecciona el cliente correcto y registra el motivo. El chico, las fichas entregadas y los productos permanecen registrados tal como se jugaron. Si el cargo tiene un cobro asociado o supera el saldo pendiente, la aplicación bloquea el traslado.
 
+En **Personal → Corregir cargos de billar**, Humberto puede trasladar una parte fiada de una mesa liquidada en el turno abierto. Busca la mesa y el cliente, selecciona la cuenta correcta y registra el motivo. El traslado queda en el historial de cuentas, la auditoría y el informe del turno. Las partes con un cobro asociado requieren revisar ese pago antes de corregir el cargo.
+
 En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las fichas físicas contadas. En **Fondo para compras**, el administrador registra el efectivo entregado y la cajera consulta el saldo disponible. Para descontar un pago, usa **Registrar movimiento → Pago desde el fondo para compras**. Si una salida se usó para comprar mercancía, puedes elegir ese gasto al ingresar existencias. Para cerrar, registra el efectivo contado en ambos fondos, las transferencias verificadas y las fichas físicas. Pulsa **Confirmar conteo y revisar** para ver el cuadre. Luego indica la base que dejas y explica cualquier diferencia antes de guardar.
 
 Si la base que dejas para el próximo turno difiere de la base de apertura, escribe el motivo en la nota de cierre. La nota queda en el historial y en el PDF del turno.

@@ -10,7 +10,7 @@ export { useOperation } from './OperationRecovery';
 export type Account = { id: number; name: string; balance: number; createdAt?: string };
 export type PaymentInput = { cash: number; transfer: number; tokens: number };
 export type Payment = PaymentInput & { id: number; saleId: number | null; tokenValue: number; createdAt: string; voided?: number | null };
-type Sale = { id: number; total: number; createdAt: string; voided: boolean; items: { label: string; quantity: number; unitPrice: number }[] };
+type Sale = { id: number; total: number; createdAt: string; voided: boolean; transferred?: boolean; items: { label: string; quantity: number; unitPrice: number }[] };
 type Detail = { account: Account; sales: Sale[]; payments: Payment[]; history: AccountHistory };
 export type Product = {
   id: number; name: string; brand: string; presentation: string; price: number; active: 0 | 1;
@@ -81,13 +81,14 @@ function HistoryTimeline({ cycle, sources }: { cycle: AccountCycle; sources: His
   return <ol className="ledger-list account-timeline">{[...cycle.movements].reverse().map((movement) => {
     const sale = movement.kind === 'sale' ? sources.sales.get(movement.sourceId) : undefined;
     const payment = movement.kind === 'payment' ? sources.payments.get(movement.sourceId) : undefined;
-    const title = movement.kind === 'void' ? 'Anulación de venta #' + movement.sourceId
+    const correction = sources.sales.get(movement.sourceId)?.transferred ? 'Traslado del cargo #' : 'Anulación de venta #';
+    const title = movement.kind === 'void' ? correction + movement.sourceId
       : movement.kind === 'payment_void' ? 'Anulación de abono #' + movement.sourceId
         : payment ? (payment.saleId ? 'Pago de venta #' + payment.saleId : 'Abono #' + payment.id)
         : 'Cargo #' + movement.sourceId;
     return <li key={movement.id}>
       <div className="row-between">
-        <strong>{title}{(sale?.voided || payment?.voided) ? ' · Anulado' : ''}</strong>
+        <strong>{title}{sale?.transferred ? ' · Trasladado' : (sale?.voided || payment?.voided) ? ' · Anulado' : ''}</strong>
         <strong>{money.format(movement.amount)}</strong>
       </div>
       <div className="row-between account-movement-meta">

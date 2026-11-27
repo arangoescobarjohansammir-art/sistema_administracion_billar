@@ -9,10 +9,13 @@ export function readAccounting(database: DatabaseSync, range: AccountingRange, n
   const cutoff = asOf < end ? new Date(now.getTime() + 1).toISOString() : end;
   const salesEvents = `
     SELECT s.created_at AS at, s.account_id AS account, s.total AS sales, 0 AS cancellation,
-      NOT EXISTS (SELECT 1 FROM sale_credit_shares WHERE share_sale_id = s.id) AS transactions
+      (NOT EXISTS (SELECT 1 FROM sale_credit_shares WHERE share_sale_id = s.id) AND
+       NOT EXISTS (SELECT 1 FROM billiard_charge_moves WHERE replacement_sale_id = s.id)) AS transactions
     FROM sales s WHERE s.created_at < $end
     UNION ALL
-    SELECT v.created_at, s.account_id, -s.total, s.total, 0 FROM sale_voids v JOIN sales s ON s.id = v.sale_id WHERE v.created_at < $end
+    SELECT v.created_at, s.account_id, -s.total, CASE WHEN move.original_sale_id IS NULL THEN s.total ELSE 0 END, 0
+    FROM sale_voids v JOIN sales s ON s.id = v.sale_id
+    LEFT JOIN billiard_charge_moves move ON move.original_sale_id = v.sale_id WHERE v.created_at < $end
   `;
   const paymentEvents = `
     SELECT created_at AS at, account_id AS account, sale_id AS sale, cash, transfer, tokens, token_value AS rate

@@ -222,7 +222,7 @@ function Corrections({ scope }: { scope: CorrectionScope }) {
 }
 
 export function Staff() {
-  const [section, setSection] = useState<'users' | 'audit' | 'sales' | 'redemptions' | 'payments' | 'tejo' | 'staff-payments'>('users');
+  const [section, setSection] = useState<'users' | 'audit' | 'sales' | 'redemptions' | 'payments' | 'tejo' | 'billiards' | 'staff-payments'>('users');
   return <section aria-labelledby="staff-title">
     <h2 id="staff-title">Personal y correcciones</h2>
     <nav className="actions accounts-nav" aria-label="Administración de caja">
@@ -232,12 +232,13 @@ export function Staff() {
       <button className="navigation" aria-pressed={section === 'redemptions'} onClick={() => setSection('redemptions')}>Anular canjes</button>
       <button className="navigation" aria-pressed={section === 'payments'} onClick={() => setSection('payments')}>Anular abonos</button>
       <button className="navigation" aria-pressed={section === 'tejo'} onClick={() => setSection('tejo')}>Corregir cargos de tejo</button>
+      <button className="navigation" aria-pressed={section === 'billiards'} onClick={() => setSection('billiards')}>Corregir cargos de billar</button>
       <button className="navigation" aria-pressed={section === 'staff-payments'} onClick={() => setSection('staff-payments')}>Corregir pagos al personal</button>
     </nav>
     {section === 'users' && <Users />}
     {section === 'audit' && <AuditLog />}
     {(section === 'sales' || section === 'redemptions') && <Corrections key={section} scope={section} />}
-    {(section === 'payments' || section === 'tejo') && <AccountCorrections key={section} mode={section} />}
+    {(section === 'payments' || section === 'tejo' || section === 'billiards') && <AccountCorrections key={section} mode={section} />}
     {section === 'staff-payments' && <StaffPaymentCorrections />}
   </section>;
 }
