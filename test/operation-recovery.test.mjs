@@ -12,7 +12,7 @@ test('recupera una venta, un aporte y un chico guardados aunque se pierdan sus c
     name: 'Cerveza de prueba', brand: '', presentation: 'Unidad', price: 8000, packageName: '', unitsPerPackage: 1, active: true,
   });
   await server.json('/api/products/' + productId + '/movements', 201, 'POST', {
-    direction: 'in', unit: 'unit', quantity: 3, reason: 'Saldo inicial',
+    direction: 'in', unit: 'unit', quantity: 3, reason: 'Saldo inicial', requestId: randomUUID(),
   });
   const { id: group } = await server.json('/api/tejo', 201, 'POST', {
     courtType: 'maxi', courtNumber: 1, playerCount: 2, requestId: randomUUID(),

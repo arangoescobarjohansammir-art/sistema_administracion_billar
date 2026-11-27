@@ -212,7 +212,7 @@ test('separa las canchas y registra cada chico y canje una sola vez', { timeout:
       name, brand: '', presentation: 'Unidad', price, packageName: '', unitsPerPackage: 1, active: true,
     });
     await json(catalog + '/' + data.id + '/movements', 201, 'POST', {
-      direction: 'in', unit: 'unit', quantity: 5, reason: 'Existencia inicial',
+      direction: 'in', unit: 'unit', quantity: 5, reason: 'Existencia inicial', requestId: randomUUID(),
     });
     return { productId: data.id, quantity: 1, unitPrice: price };
   }
@@ -291,7 +291,7 @@ test('distingue diez fichas de canje por productos de las fichas de abono', { ti
     packageName: '', unitsPerPackage: 1, active: true,
   });
   await json('/api/products/' + bottle.id + '/movements', 201, 'POST', {
-    direction: 'in', unit: 'unit', quantity: 2, reason: 'Prueba',
+    direction: 'in', unit: 'unit', quantity: 2, reason: 'Prueba', requestId: randomUUID(),
   });
   const items = [{ productId: bottle.id, quantity: 1, unitPrice: 60000 }];
   const sale = { accountId: null, items, tokens: 10, payment: { ...noPayment, cash: 20000 }, requestId: randomUUID() };
@@ -395,7 +395,7 @@ test('acepta jugadores sin nombre y asigna los chicos por cantidad después de j
     packageName: '', unitsPerPackage: 1, active: true,
   });
   const stockPath = '/api/products/' + beer.id + '/movements';
-  await json(stockPath, 201, 'POST', { direction: 'in', unit: 'unit', quantity: 2, reason: 'Existencias' });
+  await post(stockPath, 201, { direction: 'in', unit: 'unit', quantity: 2, reason: 'Existencias' });
   const first = await post(path + '/record', 201, { issueAll: false });
   let group = (await json('/api/tejo', 200)).active.find((item) => item.id === id);
   const [one, two] = group.players;

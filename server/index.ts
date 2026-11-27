@@ -106,7 +106,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     return accountCorrections(request, response, path);
   }
   if (path === '/api/products' || path.startsWith('/api/products/')) {
-    return handleCatalog(request, response, path);
+    return handleCatalog(request, response, path, accounts.writeOnce);
   }
   if (path === '/api/inventory-counts' || path.startsWith('/api/inventory-counts/')) {
     return inventoryCounts(request, response, path);

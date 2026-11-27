@@ -9,7 +9,8 @@ type Draft = {
   requestId: string; path: string; data: object; username: string; createdAt: string; label: string;
 };
 type Receipt = { status: 'missing' | 'saved' | 'discarded'; id: number | null };
-type Write = (path: string, data: object, label?: string) => Promise<{ id: number }>;
+type WriteResult = { id: number; movementId?: number };
+type Write = <T extends WriteResult = WriteResult>(path: string, data: object, label?: string) => Promise<T>;
 type Recovery = { draft: Draft | null; storageError: boolean };
 const Operation = createContext<Write | null>(null);
 const operationAreas: Record<string, string> = {
@@ -33,7 +34,7 @@ function changeDraft(update: (current: Draft | null) => Draft | null) {
 }
 
 const receiptPath = (draft: Draft) => 'operations/' + draft.requestId;
-const send = (draft: Draft) => api<{ id: number }>(draft.path, { ...draft.data, requestId: draft.requestId });
+const send = <T extends WriteResult = WriteResult>(draft: Draft) => api<T>(draft.path, { ...draft.data, requestId: draft.requestId });
 const clear = (draft: Draft) => changeDraft((current) => current?.requestId === draft.requestId ? null : current);
 
 function operationLabel(path: string, data: Record<string, unknown>, label?: string) {
@@ -77,7 +78,7 @@ function ReviewOperation({ draft, operator, onFinished, onLogout }: {
     const checked = await api<Receipt>(receiptPath(draft));
     if (checked.status !== 'missing') { setReceipt(checked); return; }
     const result = await send(draft);
-    setReceipt({ status: 'saved', id: result.id });
+    setReceipt({ status: 'saved', id: result.movementId ?? result.id });
   }
 
   return <main>
@@ -124,7 +125,7 @@ export function OperationRecovery({ operator, onLogout, children }: {
     return () => window.removeEventListener('storage', changed);
   }, []);
 
-  const write: Write = async (path, data, label) => {
+  const write: Write = async <T extends WriteResult,>(path: string, data: object, label?: string) => {
     const draft = { requestId: crypto.randomUUID(), path, data, username: operator.username,
       createdAt: new Date().toISOString(), label: operationLabel(path, data as Record<string, unknown>, label) };
     let reserved: Draft | null;
@@ -135,7 +136,7 @@ export function OperationRecovery({ operator, onLogout, children }: {
       throw new Error('Revisa la operación pendiente antes de registrar otra.');
     }
     try {
-      const result = await send(draft);
+      const result = await send<T>(draft);
       await clear(draft);
       return result;
     } catch (failure) {

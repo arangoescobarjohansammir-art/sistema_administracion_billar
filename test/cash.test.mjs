@@ -14,7 +14,7 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
     name: 'Cerveza', brand: '', presentation: 'Botella', price: 1000, packageName: '', unitsPerPackage: 1, active: true,
   });
   const productMoves = '/api/products/' + product.id + '/movements';
-  await json(productMoves, 201, 'POST', { direction: 'in', unit: 'unit', quantity: 300, reason: 'Existencias de prueba' });
+  await post(productMoves, 201, { direction: 'in', unit: 'unit', quantity: 300, reason: 'Existencias de prueba' });
   const sale = (quantity, payment, accountId = null) => ({
     accountId, items: [{ productId: product.id, quantity, unitPrice: 1000 }], payment,
   });
@@ -45,9 +45,10 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
   const references = await json('/api/cash/purchase-references', 200);
   assert.equal(references.length, 2);
   assert.ok(references.some((entry) => entry.id === expense.id));
-  const receive = { direction: 'in', unit: 'unit', quantity: 12, reason: 'Compra imprevista', cashMovementId: expense.id };
-  await json(productMoves, 400, 'POST', { ...receive, direction: 'out' });
-  await json(productMoves, 201, 'POST', receive);
+  const receive = { direction: 'in', unit: 'unit', quantity: 12, reason: 'Compra imprevista', cashMovementId: expense.id, requestId: randomUUID() };
+  await post(productMoves, 400, { ...receive, direction: 'out' });
+  const received = await post(productMoves, 201, receive);
+  assert.equal((await post(productMoves, 200, receive)).movementId, received.movementId);
 
   await stop();
   await start();
@@ -107,7 +108,8 @@ test('cuadra ambos fondos, conserva diferencias y pasa la base al próximo turno
     [[9000, ''], [9500, reason], [9500, repeatedReason]]);
   assert.equal((await json('/api/cash', 200)).previousBase, 100_000);
   await post(move, 409, { ...purchase, requestId: randomUUID() });
-  await json(productMoves, 409, 'POST', receive);
+  assert.equal((await post(productMoves, 200, receive)).movementId, received.movementId);
+  await post(productMoves, 409, { ...receive, requestId: randomUUID() });
 
   await post('/api/cash', 400, { cashier: 'Cajero de prueba', openingBase: 90_000, openingTokens: 101, note: '' });
   const second = await openShift(100_000, 101);

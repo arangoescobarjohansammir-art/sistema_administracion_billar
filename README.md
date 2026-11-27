@@ -40,7 +40,7 @@ En **Caja**, abre el turno con el nombre del cajero, la base de efectivo y las f
 
 Si la base que dejas para el próximo turno difiere de la base de apertura, escribe el motivo en la nota de cierre. La nota queda en el historial y en el PDF del turno.
 
-Si se pierde la confirmación de una venta, un movimiento de caja o un chico, la pantalla **Operación por confirmar** consulta lo que quedó guardado, incluso después de recargar. Si la caja sigue sin encontrarlo, puedes reenviar los mismos datos o descartar ese intento después de verificar lo ocurrido.
+Si se pierde la confirmación de una venta, un movimiento de caja o de inventario, o un chico, la pantalla **Operación por confirmar** consulta lo que quedó guardado, incluso después de recargar. Si la caja sigue sin encontrarlo, puedes reenviar los mismos datos o descartar ese intento después de verificar lo ocurrido.
 
 Si necesitas volver a contar, usa **Hacer un recuento** e indica el motivo. El turno y su PDF conservan el primer conteo y los recuentos. Si se registra un movimiento de efectivo, transferencias o fichas después de contar, la caja exige un nuevo conteo antes de guardar el cierre, incluso si el saldo esperado queda igual.
 

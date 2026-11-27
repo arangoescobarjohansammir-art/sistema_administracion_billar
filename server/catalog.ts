@@ -5,6 +5,9 @@ import { findProduct, productSelect, recordInventoryMovement } from './inventory
 import { activeShiftId } from './cash-ledger.js';
 import type { Audit } from './audit.js';
 import { requestOperator } from './operators.js';
+import { type createAccounts, ValidationError } from './accounts.js';
+
+type WriteOnce = ReturnType<typeof createAccounts>['writeOnce'];
 
 const photoLimit = 2 * 1024 * 1024;
 const nameLimit = 100;
@@ -90,10 +93,10 @@ export function createCatalog(database: DatabaseSync, audit?: Audit) {
     return sendJson(response, 200, findProduct(database, id));
   }
 
-  async function addMovement(request: IncomingMessage, response: ServerResponse, id: number) {
+  async function addMovement(request: IncomingMessage, response: ServerResponse, id: number, writeOnce: WriteOnce) {
     const input = await readJson(request);
     const reason = stringField(input?.reason, 240);
-    const { quantity, direction, unit, cashMovementId } = input ?? {};
+    const { quantity, direction, unit, cashMovementId, expectedUnitsPerInput } = input ?? {};
     if (!reason || !integerField(quantity, 1, quantityLimit) ||
       (direction !== 'in' && direction !== 'out') || (unit !== 'unit' && unit !== 'package')) {
       return sendJson(response, 400, { error: 'Indica un motivo y una cantidad entera mayor que cero.' });
@@ -104,46 +107,55 @@ export function createCatalog(database: DatabaseSync, audit?: Audit) {
     if (cashMovementId !== undefined && (direction !== 'in' || !integerField(cashMovementId, 1, Number.MAX_SAFE_INTEGER))) {
       return sendJson(response, 400, { error: 'Solo las entradas pueden vincularse a un gasto de caja.' });
     }
+    if (expectedUnitsPerInput !== undefined && !integerField(expectedUnitsPerInput, 1, 10_000)) {
+      return sendJson(response, 400, { error: 'Revisa las unidades por empaque.' });
+    }
 
-    database.exec('BEGIN IMMEDIATE');
-    let committed = false;
+    const fingerprint = JSON.stringify(['inventory-movement', id, direction, unit, quantity, reason,
+      cashMovementId ?? null, expectedUnitsPerInput ?? null]);
     try {
-      const product = findProduct(database, id);
-      if (cashMovementId !== undefined && !database.prepare([
-        "SELECT id FROM cash_movements WHERE id = ? AND shift_id = ? AND kind IN ('sales_expense', 'purchase_expense')",
-      ].join(' ')).get(Number(cashMovementId), activeShiftId(database))) {
-        return sendJson(response, 409, { error: 'El gasto debe pertenecer al turno de caja abierto.' });
-      }
-      if (!product) return sendJson(response, 404, { error: 'Producto no encontrado.' });
-      if (!product.active) return sendJson(response, 409, { error: 'Reactiva el producto antes de mover sus existencias.' });
-      if (unit === 'package' && !product.packageName) {
-        return sendJson(response, 400, { error: 'Este producto no tiene empaque configurado.' });
-      }
-      const unitsPerInput = unit === 'package' ? Number(product.unitsPerPackage) : 1;
-      const units = (direction === 'in' ? 1 : -1) * unitsPerInput * quantity;
-      const newStock = Number(product.stock) + units;
-      if (newStock < 0 || newStock > quantityLimit) {
-        return sendJson(response, 409, { error: newStock < 0 ? 'No hay suficientes unidades.' : 'Se excede el límite de existencias.' });
-      }
-      const movementId = recordInventoryMovement(database, {
-        productId: id, units, reason, createdAt: new Date().toISOString(), quantity, unitsPerInput,
-        inputUnit: unit === 'package' ? String(product.packageName) : 'unidad',
+      const result = writeOnce(input?.requestId, fingerprint, () => {
+        const product = findProduct(database, id);
+        if (cashMovementId !== undefined && !database.prepare(
+          "SELECT id FROM cash_movements WHERE id = ? AND shift_id = ? AND kind IN ('sales_expense', 'purchase_expense')",
+        ).get(Number(cashMovementId), activeShiftId(database))) {
+          throw new ValidationError(409, 'El gasto debe pertenecer al turno de caja abierto.');
+        }
+        if (!product) throw new ValidationError(404, 'Producto no encontrado.');
+        if (!product.active) throw new ValidationError(409, 'Reactiva el producto antes de mover sus existencias.');
+        if (unit === 'package' && !product.packageName) {
+          throw new ValidationError(400, 'Este producto no tiene empaque configurado.');
+        }
+        const unitsPerInput = unit === 'package' ? Number(product.unitsPerPackage) : 1;
+        if (expectedUnitsPerInput !== undefined && expectedUnitsPerInput !== unitsPerInput) {
+          throw new ValidationError(409, 'Cambió la cantidad por empaque. Actualiza el producto antes de registrar el movimiento.');
+        }
+        const units = (direction === 'in' ? 1 : -1) * unitsPerInput * quantity;
+        const newStock = Number(product.stock) + units;
+        if (newStock < 0 || newStock > quantityLimit) {
+          throw new ValidationError(409, newStock < 0 ? 'No hay suficientes unidades.' : 'Se excede el límite de existencias.');
+        }
+        const movementId = Number(recordInventoryMovement(database, {
+          productId: id, units, reason, createdAt: new Date().toISOString(), quantity, unitsPerInput,
+          inputUnit: unit === 'package' ? String(product.packageName) : 'unidad',
+        }));
+        if (cashMovementId !== undefined) {
+          database.prepare('INSERT INTO cash_inventory_links (inventory_movement_id, cash_movement_id) VALUES (?, ?)')
+            .run(movementId, Number(cashMovementId));
+        }
+        audit?.record(request, 'inventory_movement', movementId, `${product.name} · ${units > 0 ? '+' : ''}${units} unidades · ${reason}`);
+        return movementId;
       });
-      if (cashMovementId !== undefined) {
-        database.prepare('INSERT INTO cash_inventory_links (inventory_movement_id, cash_movement_id) VALUES (?, ?)')
-          .run(movementId, Number(cashMovementId));
-      }
-      audit?.record(request, 'inventory_movement', Number(movementId), `${product.name} · ${units > 0 ? '+' : ''}${units} unidades · ${reason}`);
-      const updated = findProduct(database, id);
-      database.exec('COMMIT');
-      committed = true;
-      return sendJson(response, 201, updated);
-    } finally {
-      if (!committed) database.exec('ROLLBACK');
+      return sendJson(response, result.repeated ? 200 : 201, {
+        ...findProduct(database, id), movementId: result.id, repeated: result.repeated,
+      });
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+      return sendJson(response, error.status, { error: error.message });
     }
   }
 
-  return async function handleCatalog(request: IncomingMessage, response: ServerResponse, path: string) {
+  return async function handleCatalog(request: IncomingMessage, response: ServerResponse, path: string, writeOnce: WriteOnce) {
     const match = /^\/api\/products(?:\/([1-9]\d*)(?:\/(photo|movements))?)?$/.exec(path);
     if (!match) return sendJson(response, 404, { error: 'Ruta de catálogo no encontrada.' });
     const [, rawId, action] = match;
@@ -154,7 +166,7 @@ export function createCatalog(database: DatabaseSync, audit?: Audit) {
     }
     if (!rawId && request.method === 'POST') return saveProduct(request, response);
     if (rawId && !action && request.method === 'PUT') return saveProduct(request, response, id);
-    if (action === 'movements' && request.method === 'POST') return addMovement(request, response, id);
+    if (action === 'movements' && request.method === 'POST') return addMovement(request, response, id, writeOnce);
     if (action === 'movements' && request.method === 'GET') {
       if (!findProduct(database, id)) return sendJson(response, 404, { error: 'Producto no encontrado.' });
       const rows = database.prepare(

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api } from './Accounts';
+import { api, useOperation } from './Accounts';
 import { InventoryCounts } from './InventoryCounts';
 
 type Product = {
@@ -129,13 +129,14 @@ function Inventory({ product, onMovement, isAdmin }: {
   const [purchases, setPurchases] = useState<CashReference[]>([]);
   const [unit, setUnit] = useState('unit');
   const [quantity, setQuantity] = useState('');
-  const endpoint = '/' + product.id + '/movements';
+  const endpoint = 'products/' + product.id + '/movements';
+  const write = useOperation();
 
   async function load() {
     setLoadError('');
     try {
       const [entries, references] = await Promise.all([
-        request<Movement[]>(endpoint), api<CashReference[]>('cash/purchase-references'),
+        api<Movement[]>(endpoint), api<CashReference[]>('cash/purchase-references'),
       ]);
       setHistory(entries);
       setPurchases(references);
@@ -156,10 +157,13 @@ function Inventory({ product, onMovement, isAdmin }: {
     setSaved(false);
     setSaveError('');
     try {
-      const updated = await request<Product>(endpoint, 'POST', {
+      const movementLabel = (direction === 'in' ? 'Entrada de inventario' : 'Salida de inventario') + ' · ' + product.name +
+        ' · ' + quantity + ' × ' + (unit === 'package' ? product.packageName : 'unidad');
+      const updated = await write<Product>(endpoint, {
         direction, quantity: Number(quantity), unit, reason: data.get('reason'),
         cashMovementId: linkedExpense ? Number(linkedExpense) : undefined,
-      });
+        expectedUnitsPerInput: unit === 'package' ? product.unitsPerPackage : undefined,
+      }, movementLabel);
       onMovement(updated);
       form.reset();
       setQuantity('');

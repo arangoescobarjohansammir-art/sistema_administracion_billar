@@ -49,7 +49,7 @@ test('respalda un cierre y restaura ventas, inventario y fotos en una base nueva
     unitsPerPackage: 1, active: true, photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACElEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII=',
   });
   await server.json('/api/products/' + product.id + '/movements', 201, 'POST', {
-    direction: 'in', unit: 'unit', quantity: 7, reason: 'Prueba',
+    direction: 'in', unit: 'unit', quantity: 7, reason: 'Prueba', requestId: randomUUID(),
   });
   await server.json('/api/sales', 201, 'POST', {
     requestId: randomUUID(), accountId: null, items: [{ productId: product.id, quantity: 1, unitPrice: 4000 }],

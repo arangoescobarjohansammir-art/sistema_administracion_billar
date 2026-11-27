@@ -72,7 +72,7 @@ test('conserva la mesa, reparte tiempo y consumos, y descuenta inventario solo a
     price: 4000, packageName: '', unitsPerPackage: 1, active: true,
   });
   const stock = '/api/products/' + product.id + '/movements';
-  await json(stock, 201, 'POST', { direction: 'in', unit: 'unit', quantity: 8, reason: 'Saldo inicial' });
+  await json(stock, 201, 'POST', { direction: 'in', unit: 'unit', quantity: 8, reason: 'Saldo inicial', requestId: randomUUID() });
   const order = { productId: product.id, quantity: 3, unitPrice: 4000, requestId: randomUUID() };
   await json(base + '/items', 201, 'POST', order);
   await json(base + '/items', 200, 'POST', order);

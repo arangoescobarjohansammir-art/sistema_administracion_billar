@@ -195,7 +195,7 @@ test('cobra y fía ventas sin duplicar inventario o abonos', { timeout: 20000 },
   const beer = await json('/api/products', 201, 'POST', form);
   const juice = await json('/api/products', 201, 'POST', { ...form, name: 'Jugo de prueba' });
   const stockPath = '/api/products/' + beer.id + '/movements';
-  await json(stockPath, 201, 'POST', { direction: 'in', unit: 'unit', quantity: 12, reason: 'Saldo inicial de prueba' });
+  await json(stockPath, 201, 'POST', { direction: 'in', unit: 'unit', quantity: 12, reason: 'Saldo inicial de prueba', requestId: randomUUID() });
   const customer = await json('/api/accounts', 201, 'POST', { name: '  José   Prueba  ' });
   assert.equal(customer.name, 'José Prueba');
   await json('/api/accounts', 409, 'POST', { name: 'jose prueba' });
