@@ -165,13 +165,16 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
     return accountById(Number(account?.id));
   }
 
+  const operationReceipt = database.prepare('SELECT fingerprint, result_id AS id FROM account_operations WHERE request_id = ?');
+  const discardOperation = database.prepare('INSERT INTO account_operations VALUES (?, ?, 0) ON CONFLICT(request_id) DO NOTHING');
+
   function writeOnce(requestId: unknown, fingerprint: string, write: () => number) {
     if (typeof requestId !== 'string' || !requestIdPattern.test(requestId)) {
       throw new ValidationError(400, 'Identificador de operación inválido.');
     }
     database.exec('BEGIN IMMEDIATE');
     try {
-      const previous = database.prepare('SELECT fingerprint, result_id AS id FROM account_operations WHERE request_id = ?').get(requestId);
+      const previous = operationReceipt.get(requestId);
       if (previous && previous.fingerprint !== fingerprint) {
         throw new ValidationError(409, 'Este identificador pertenece a otra operación.');
       }
@@ -320,6 +323,15 @@ export function createAccounts(database: DatabaseSync, audit?: Audit) {
 
   async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     try {
+      if (path.startsWith('/api/operations/')) {
+        const requestId = path.slice('/api/operations/'.length);
+        if (!requestIdPattern.test(requestId)) throw new ValidationError(400, 'Identificador de operación inválido.');
+        if (request.method === 'POST') discardOperation.run(requestId, 'discarded');
+        else if (request.method !== 'GET') return sendJson(response, 405, { error: 'Método no permitido.' });
+        const receipt = operationReceipt.get(requestId);
+        return sendJson(response, 200, { status: !receipt ? 'missing' : receipt.id === 0 ? 'discarded' : 'saved',
+          id: receipt && receipt.id !== 0 ? Number(receipt.id) : null });
+      }
       if (path === '/api/sales' && request.method === 'POST') return await registerSale(request, response);
       if (path === '/api/sales' && request.method === 'GET') {
         const sales = getSales(null);

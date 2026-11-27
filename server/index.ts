@@ -111,7 +111,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (path === '/api/inventory-counts' || path.startsWith('/api/inventory-counts/')) {
     return inventoryCounts(request, response, path);
   }
-  if (path === '/api/sales' || path === '/api/accounts' || path.startsWith('/api/accounts/')) {
+  if (path === '/api/sales' || path === '/api/accounts' || path.startsWith('/api/accounts/') || path.startsWith('/api/operations/')) {
     return accounts.handle(request, response, path);
   }
   if (path === '/api/billiards' || path.startsWith('/api/billiards/')) {

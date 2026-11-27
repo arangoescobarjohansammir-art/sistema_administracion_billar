@@ -13,6 +13,7 @@ import type { AccountingData, PeriodKind } from '../shared/accounting';
 import type { Operator } from '../shared/operators';
 import clubIcon from '../shared/brand/club-icon.png';
 import { useCajaKeyboard } from './keyboard';
+import { OperationRecovery } from './OperationRecovery';
 import './style.css';
 
 type LocalNote = { text: string; updatedAt: string | null };
@@ -220,7 +221,9 @@ function Root() {
 
   if (session?.operator) return <>
     {error && <p className="cash-error" role="alert">{error}</p>}
-    <App key={session.operator.id} operator={session.operator} onLogout={() => void logOut()} />
+    <OperationRecovery key={session.operator.id} operator={session.operator} onLogout={() => void logOut()}>
+      <App operator={session.operator} onLogout={() => void logOut()} />
+    </OperationRecovery>
   </>;
   if (session) return <Access key={String(session.setupNeeded)} session={session} onChange={changeSession} />;
   return <main>{error ? <p role="alert">{error} <button className="secondary" onClick={() => void load()}>Reintentar</button></p>

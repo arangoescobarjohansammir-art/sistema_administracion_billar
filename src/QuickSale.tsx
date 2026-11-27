@@ -208,8 +208,8 @@ export function QuickSale({ active, cashOpen, onCash }: { active: boolean; cashO
         items: items.map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price })),
       };
       const receipt = productRedemption
-        ? await write('tejo/redemptions', { ...payload, tokens })
-        : await write('sales', payload);
+        ? await write('tejo/redemptions', { ...payload, tokens }, 'Canje de productos · ' + money.format(total))
+        : await write('sales', payload, 'Venta de productos · ' + money.format(total));
       reset();
       const summary = remaining > 0 ? (splitActive ? 'Fiado repartido en ' + creditParts.length + ' cuentas: ' : 'Saldo fiado: ') + money.format(remaining)
         : productRedemption ? 'Cubierto con fichas: ' + money.format(coveredProducts) + ' · Cobrado: ' + money.format(due)
