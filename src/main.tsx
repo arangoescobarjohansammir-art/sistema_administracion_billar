@@ -9,7 +9,7 @@ import { QuickSale } from './QuickSale';
 import { Access, type CashSession } from './Access';
 import { Staff } from './Staff';
 import { AccountingPanel } from './AccountingPanel';
-import type { AccountingData, PeriodKind } from '../shared/accounting';
+import type { AccountingData } from '../shared/accounting';
 import type { Operator } from '../shared/operators';
 import clubIcon from '../shared/brand/club-icon.png';
 import { useCajaKeyboard } from './keyboard';
@@ -98,8 +98,7 @@ const modules = [
 ] as const;
 type Section = typeof modules[number][0] | 'staff' | 'reports';
 
-const loadAccounting = (kind: PeriodKind, date: string) =>
-  api<AccountingData>('reports?' + new URLSearchParams({ kind, anchor: date }));
+const loadAccounting = (query: string) => api<AccountingData>('reports?' + query);
 
 const localDate = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
 const localClock = new Intl.DateTimeFormat('es-CO', { timeStyle: 'medium', timeZone: 'America/Bogota' });

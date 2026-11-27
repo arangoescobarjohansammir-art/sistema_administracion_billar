@@ -1,6 +1,5 @@
 import type { CashMovementCorrection } from './cash.js';
 
-export type PeriodKind = 'week' | 'month';
 export type AccountingRange = { from: string; to: string };
 export type AccountingAmounts = {
   sales: number; voidedSales: number; cash: number; transfer: number; tokens: number; tokenValue: number;
@@ -29,11 +28,20 @@ export const colombianDay = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
 });
 
-export function accountingPeriod(kind: string | null, anchor: string | null): AccountingRange | null {
-  if (!anchor || !/^20\d\d-\d\d(?:-\d\d)?$/.test(anchor)) return null;
-  const input = kind === 'month' && anchor.length === 7 ? anchor + '-01' : anchor;
+function parseDay(input: string | null) {
+  if (!input || !/^20\d\d-\d\d-\d\d$/.test(input)) return null;
   const date = new Date(input + 'T00:00:00Z');
-  if (!Number.isFinite(date.getTime()) || isoDay(date) !== input) return null;
+  return Number.isFinite(date.getTime()) && isoDay(date) === input ? date : null;
+}
+
+export function accountingDateRange(from: string | null, to: string | null): AccountingRange | null {
+  if (!from || !to || from > to || !parseDay(from) || !parseDay(to)) return null;
+  return { from, to };
+}
+
+export function accountingPeriod(kind: string | null, anchor: string | null): AccountingRange | null {
+  const date = parseDay(kind === 'month' && anchor?.length === 7 ? anchor + '-01' : anchor);
+  if (!date) return null;
   if (kind === 'month') {
     const year = date.getUTCFullYear();
     const month = date.getUTCMonth();

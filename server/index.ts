@@ -17,7 +17,7 @@ import { createAccountCorrections } from './account-corrections.js';
 import { createStaffPaymentCorrections } from './staff-payment-corrections.js';
 import { createInventoryCounts } from './inventory-counts.js';
 import { readJson, sendJson } from './http.js';
-import { accountingPeriod, colombianDay } from '../shared/accounting.js';
+import { accountingDateRange, accountingPeriod, colombianDay } from '../shared/accounting.js';
 import { readAccounting } from './accounting.js';
 
 const host = '127.0.0.1';
@@ -131,10 +131,15 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (operator?.role !== 'admin') return sendJson(response, 403, { error: 'Los reportes son para el administrador.' });
     if (request.method !== 'GET') return sendJson(response, 405, { error: 'Método no permitido.' });
     const query = new URL(request.url ?? '/', `http://${host}`).searchParams;
-    const period = accountingPeriod(query.get('kind'), query.get('anchor'));
+    const kind = query.get('kind');
+    const period = kind === 'range' ? accountingDateRange(query.get('from'), query.get('to'))
+      : accountingPeriod(kind, query.get('anchor'));
     const now = new Date();
-    if (!period || period.from > colombianDay.format(now)) {
-      return sendJson(response, 400, { error: 'Elige una semana o un mes con una fecha válida.' });
+    const today = colombianDay.format(now);
+    if (!period || period.from > today || (kind === 'range' && period.to > today)) {
+      return sendJson(response, 400, { error: kind === 'range'
+        ? 'Elige fechas válidas en orden, hasta el día de hoy.'
+        : 'Elige un periodo con una fecha válida.' });
     }
     return sendJson(response, 200, readAccounting(database, period, now));
   }

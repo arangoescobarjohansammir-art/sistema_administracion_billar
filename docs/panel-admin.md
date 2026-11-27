@@ -45,7 +45,7 @@ En **Caja → Fondo para compras**, escribe el importe del efectivo ya entregado
 
 Al iniciar, **Alertas** muestra los cierres con diferencias y los retiros imprevistos de los últimos siete días registrados, además de los productos activos agotados. Los retiros incluyen compras imprevistas y otros retiros de la caja de ventas. Cuando la última copia tiene tres minutos o más, el panel muestra **Sincronización atrasada** junto con la fecha y la hora de esa copia.
 
-En **Reportes**, selecciona una semana o un mes y usa **Descargar PDF**. El celular consulta el mes actual y los tres meses calendario anteriores a partir de la última sincronización. Las semanas disponibles deben comenzar dentro de ese intervalo. En el computador de caja puedes consultar periodos anteriores. Los reportes incluyen movimientos de fondos, saldos y cambios diarios por cliente, cobros y cuadre de turnos cerrados. Los datos siguen las mismas reglas RLS del panel.
+En **Reportes**, elige **Por fechas** para indicar el inicio y el fin, o **Mensual** para elegir un mes calendario. Puedes usar **Descargar PDF** en ambos casos. El celular tiene datos desde el inicio de los tres meses calendario anteriores hasta el día de la última sincronización. En el computador de caja puedes consultar periodos anteriores. Los reportes incluyen movimientos de fondos, saldos y cambios diarios por cliente, cobros y cuadre de turnos cerrados. Los datos siguen las mismas reglas RLS del panel.
 
 **Ventas** y **Reportes** muestran las ventas y los cobros en su fecha original. Las anulaciones se descuentan en la fecha en que se registraron, según la hora de Colombia. Si lo anulado supera lo registrado en un día, el importe neto puede ser negativo.
 

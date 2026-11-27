@@ -56,6 +56,43 @@ test('calcula el saldo al corte y aplica las correcciones en su fecha colombiana
   assert.equal(accountingReport(data, month).accounts[0].closing, 65000);
 });
 
+test('consulta fechas de inicio y fin inclusivas y conserva el reporte mensual', { timeout: 20000 }, async (t) => {
+  const server = await testServer();
+  t.after(server.cleanup);
+  await server.start();
+  await server.stop();
+  const db = new DatabaseSync(server.databasePath);
+  try {
+    db.exec(`
+      INSERT INTO customer_accounts VALUES (1, 'Ana ficticia', 'ana', '2024-11-22T05:00:00.000Z');
+      INSERT INTO sales VALUES
+        (1, 1, 5000, '2024-11-23T04:59:59.999Z'),
+        (2, 1, 8000, '2024-11-23T05:00:00.000Z'),
+        (3, 1, 12000, '2024-11-27T04:59:59.999Z'),
+        (4, 1, 6000, '2024-11-27T05:00:00.000Z');
+    `);
+  } finally { db.close(); }
+  await server.start();
+  const rangePath = '/api/reports?kind=range&';
+  const range = { from: '2024-11-23', to: '2024-11-26' };
+  const data = await server.json(rangePath + new URLSearchParams(range), 200);
+  assert.deepEqual({ from: data.from, to: data.to }, range);
+  assert.deepEqual(data.days.map(({ day, sales }) => [day, sales]), [['2024-11-23', 8000], ['2024-11-26', 12000]]);
+  const result = accountingReport(data, range);
+  assert.equal(result.amounts.sales, 20_000);
+  assert.deepEqual(result.accounts.map(({ opening, closing }) => [opening, closing]), [[5000, 25_000]]);
+  const single = await server.json(rangePath + 'from=2024-11-26&to=2024-11-26', 200);
+  assert.deepEqual(single.days.map(({ day }) => day), ['2024-11-26']);
+  for (const query of [
+    'from=2024-11-26&to=2024-11-23', 'from=2024-11-23', 'from=2024-11-23&to=2024-11-31',
+    'from=2024-11-23&to=2099-01-01',
+  ]) await server.json(rangePath + query, 400);
+  const month = await server.json('/api/reports?kind=month&anchor=2024-11', 200);
+  assert.deepEqual({ from: month.from, to: month.to }, { from: '2024-11-01', to: '2024-11-30' });
+  assert.equal(accountingReport(month, month).amounts.sales, 31_000);
+  assert.deepEqual(accountingReport(month, range).accounts, result.accounts);
+});
+
 test('descuenta el pago diario solo de ventas y lo muestra por empleado en los reportes', async (t) => {
   const server = await testServer();
   t.after(server.cleanup);

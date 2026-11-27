@@ -50,7 +50,7 @@ Al guardar un cierre, el sistema muestra **Descargar informe PDF**. También pue
 
 Antes de cerrar, **Caja** muestra las mesas de billar y los chicos de tejo pendientes por liquidar. Si quedan juegos, confirma la revisión para guardar el detalle en el cierre, en su PDF y en el panel móvil. El tiempo de una mesa activa queda estimado al momento de guardar. Los importes se registran como venta cuando se liquida la mesa o se asigna el chico.
 
-En **Reportes** el administrador puede elegir una semana de lunes a domingo o un mes calendario de Colombia y descargar el PDF. El informe muestra ventas, cobros por medio, anulaciones, movimientos de fondos, saldos de clientes y diferencias de los turnos cerrados. Los movimientos siguen la fecha en que se registraron y cada cuadre se incluye por la fecha de cierre del turno completo. Los abonos ya están incluidos en los cobros.
+En **Reportes**, el administrador puede elegir **Por fechas**, con una fecha de inicio y fin incluidas, o **Mensual**, por mes calendario de Colombia. Ambos periodos se pueden descargar en PDF. El informe muestra ventas, cobros por medio, anulaciones, movimientos de fondos, saldos de clientes y diferencias de los turnos cerrados. Los movimientos siguen la fecha en que se registraron y cada cuadre se incluye por la fecha de cierre del turno completo. Los abonos ya están incluidos en los cobros.
 
 En **Caja → Registrar movimiento → Pago diario al personal**, registra el nombre del empleado y el efectivo entregado. El pago se descuenta de la caja de ventas y aparece en el informe del turno. **Reportes** muestra el total del periodo, el detalle de cada pago y cuánto recibió cada empleado.
 
